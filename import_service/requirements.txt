@@ -6,5 +6,11 @@ pyproj>=3.6.0
 psycopg2-binary>=2.9.9
 celery>=5.3.6
 redis>=5.0.1
+# redis>=8 imports async_timeout at module load; not pulled in automatically
+async-timeout>=4.0.3
+# imported transitively by django.contrib.gis on some paths; numpy 2.4+ ships an
+# OpenBLAS build that raises SIGILL on pre-SSE4.2 CPUs (e.g. Pentium E6700)
+numpy>=2.0,<2.4
+python-dotenv>=1.0.0
 python-multipart>=0.0.6
 requests>=2.31.0

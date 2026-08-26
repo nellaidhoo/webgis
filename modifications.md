@@ -290,3 +290,21 @@ Import API	http://192.168.150.33/api/import/
 Import Docs	http://192.168.150.33/api/import/docs
 ✅ System Status
 All core functionality is now operational. The WebGIS system is ready for production use.
+## 2026-08-26 Operations Hardening
+
+Security
+- Server login (nci-server) and Postgres role postgres passwords rotated; values are held in the password manager only, never in docs or repos.
+- Redis now requires authentication (requirepass); broker URLs in both service .env files updated. Config backup kept at /root/redis.conf.bak.*
+- Repo-wide sweep confirms zero copies of the retired credentials.
+
+Server housekeeping
+- Legacy root files moved to /opt/webgis-archive/ (Miniconda installer, stray main.py, incomplete.md, sample.html).
+- Fixed two latent import-service crashes: numpy 2.4 OpenBLAS SIGILL on this CPU (pinned <2.4) and missing async-timeout for redis 8. Both captured in import_service/requirements.txt.
+
+Backups and version control
+- Nightly pg_dump of webgisdb at 02:30 UTC via /etc/cron.d/webgis-backup, 14-day retention, into /var/backups/webgis/.
+- Code mirrored to bare repo /root/webgis.git on the server (refresh: git bundle --all, pscp, git fetch in the mirror).
+
+Verification
+- Local end-to-end harness: 22/22 checks passing.
+- Live server flow through nginx re-tested post-rotation: upload -> COMPLETED -> approve -> search all green.
