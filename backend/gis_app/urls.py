@@ -5,7 +5,7 @@ from .views import (
     StreetLightViewSet, WaterLineViewSet, WaterNodeViewSet, SewerLineViewSet,
     ManholeViewSet, SewerJunctionViewSet, ElectricalLineViewSet, ElectricalNodeViewSet,
     FiberLineViewSet, FiberNodeViewSet, SurveySessionViewSet, AuditLogViewSet,
-    SearchView, RegisterView, MeView
+    SearchView, RegisterView, MeView, HealthCheckView, VectorTileView, MetricsView
 )
 
 router = DefaultRouter()
@@ -40,4 +40,10 @@ urlpatterns = [
     # Self-service registration & profile endpoints
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/me/', MeView.as_view(), name='me'),
+    # Health check endpoint
+    path('health/', HealthCheckView.as_view(), name='health-check'),
+    # Vector tile endpoints
+    path('tiles/<str:layer>/<int:z>/<int:x>/<int:y>/', VectorTileView.as_view(), name='vector-tiles'),
+    # Metrics endpoint
+    path('metrics/', MetricsView.as_view(), name='metrics'),
 ]

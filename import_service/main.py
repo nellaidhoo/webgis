@@ -13,6 +13,8 @@ from datetime import datetime
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import time
+from functools import wraps
 
 def detect_and_reproject_coordinates(coords):
     """
@@ -251,19 +253,27 @@ async def upload_survey(
     )
     
     if celery_app is not None:
-        try:
-            celery_app.send_task(task_name, args=[session_id, saved_filepath])
-            print(f"✅ Task {task_name} queued for session {session_id}")
-        except Exception as cel_err:
-            print(f"❌ Celery error: {cel_err}")
-            # Update session status to ERROR if enqueue fails
+        last_err = None
+        for attempt in range(3):
+            try:
+                celery_app.send_task(task_name, args=[session_id, saved_filepath])
+                print(f"✅ Task {task_name} queued for session {session_id} (attempt {attempt + 1})")
+                last_err = None
+                break
+            except Exception as cel_err:
+                last_err = cel_err
+                print(f"⚠️ Celery send_task attempt {attempt + 1} failed: {cel_err}")
+                if attempt < 2:
+                    time.sleep(min(2 ** attempt, 10))
+        if last_err is not None:
+            print(f"❌ Celery error after 3 attempts: {last_err}")
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("UPDATE gis_app_surveysession SET status = 'ERROR' WHERE id = %s", (session_id,))
             conn.commit()
             cursor.close()
             conn.close()
-            raise HTTPException(status_code=500, detail=f"Failed to queue background task: {str(cel_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to queue background task after retries: {str(last_err)}")
     else:
         # Fallback: mark as processed
         print("⚠️ Celery not available - file saved but no background processing")

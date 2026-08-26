@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from django.db import transaction
 from django.db.models import F, CharField
 from django.db.models.functions import Coalesce
@@ -534,4 +535,143 @@ class MeView(views.APIView):
             "user": UserSerializer(user).data,
             "role": primary_role(user),
             "roles": user_roles(user),
+        })
+
+
+class HealthCheckView(views.APIView):
+    """Detailed health check for monitoring and load balancers."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'services': {}
+        }
+
+        # Database check
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+                health_status['services']['database'] = 'ok'
+        except Exception as e:
+            health_status['services']['database'] = f'error: {str(e)}'
+            health_status['status'] = 'unhealthy'
+
+        # Redis/Celery check
+        try:
+            from celery import current_app
+            inspect = current_app.control.inspect()
+            active = inspect.active()
+            health_status['services']['celery'] = 'ok' if active else 'error'
+            health_status['celery_workers'] = len(active or {})
+        except Exception as e:
+            health_status['services']['celery'] = f'error: {str(e)}'
+            health_status['status'] = 'unhealthy'
+
+        # Redis check (if used)
+        try:
+            from celery import current_app
+            if current_app.conf.broker_url.startswith('redis://'):
+                import redis
+                r = redis.from_url(current_app.conf.broker_url)
+                r.ping()
+                health_status['services']['redis'] = 'ok'
+            else:
+                health_status['services']['redis'] = 'skipped (filesystem broker)'
+        except Exception as e:
+            health_status['services']['redis'] = f'error: {str(e)}'
+            health_status['status'] = 'unhealthy'
+
+        # Disk space check
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage('/')
+            free_gb = free / (1024**3)
+            health_status['services']['disk'] = f'ok ({free_gb:.1f}GB free)'
+            if free_gb < 1:
+                health_status['services']['disk'] = f'warning ({free_gb:.1f}GB free)'
+        except Exception as e:
+            health_status['services']['disk'] = f'error: {str(e)}'
+
+        # Tile directory check
+        try:
+            tiles_dir = '/opt/webgis/tiles'
+            if os.path.exists(tiles_dir):
+                health_status['services']['tiles'] = 'ok'
+            else:
+                health_status['services']['tiles'] = 'directory missing'
+        except Exception as e:
+            health_status['services']['tiles'] = f'error: {str(e)}'
+
+        return Response(health_status)
+
+
+class VectorTileView(views.APIView):
+    """Vector tile endpoint serving Mapbox Vector Tiles (MVT) from PostGIS."""
+    permission_classes = [permissions.AllowAny]
+
+    VALID_LAYERS = {
+        'roads': 'mvt_roads',
+        'buildings': 'mvt_buildings',
+        'facilities': 'mvt_facilities',
+        'landuse': 'mvt_landuse',
+        'utilities': 'mvt_utilities',
+    }
+
+    def get(self, request, layer, z, x, y):
+        # Validate zoom level
+        if not (0 <= z <= 22):
+            return Response({"error": "Invalid zoom level (0-22)"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate layer
+        if layer not in self.VALID_LAYERS:
+            return Response(
+                {"error": f"Invalid layer. Valid: {list(self.VALID_LAYERS.keys())}"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            from django.db import connection
+            function_name = self.VALID_LAYERS[layer]
+            
+            with connection.cursor() as cursor:
+                cursor.execute(f"SELECT {function_name}(%s, %s, %s)", [z, x, y])
+                result = cursor.fetchone()
+                
+                if result is None or len(result) == 0 or result[0] is None:
+                    return HttpResponse(status=204)  # No content
+                
+                tile_data = result[0]
+                
+                response = HttpResponse(tile_data, content_type='application/vnd.mapbox-vector-tile')
+                response['Content-Encoding'] = 'gzip'
+                response['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
+                return response
+                
+        except Exception as e:
+            return Response(
+                {"error": f"Tile generation failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class MetricsView(views.APIView):
+    """Simple metrics endpoint for monitoring."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from .metrics import metrics, update_system_metrics
+        import json
+        
+        # Update system metrics before returning
+        update_system_metrics()
+        
+        # Track this request
+        metrics.increment('api.requests')
+        
+        return Response({
+            'metrics': metrics.get_all_metrics(),
+            'timestamp': datetime.now().isoformat()
         })
