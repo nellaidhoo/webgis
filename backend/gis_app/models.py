@@ -473,3 +473,37 @@ class AuditLog(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+
+
+# ==========================================
+# 6. USER REGISTRATION APPROVAL WORKFLOW
+# ==========================================
+class UserRegistrationRequest(models.Model):
+    """
+    Tracks user registration requests pending admin approval.
+    New users are created in INACTIVE state until an admin approves.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='registration_request')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_registrations'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, help_text="Reason if rejected")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} ({self.status})"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Registration Request'
+        verbose_name_plural = 'Registration Requests'

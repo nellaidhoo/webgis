@@ -45,7 +45,16 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'gis_app.middleware.RateLimitMiddleware',
 ]
+
+# Rate Limiting Configuration
+RATE_LIMITS = {
+    'auth': {'requests': 10, 'window': 60},      # 10 requests per minute
+    'upload': {'requests': 5, 'window': 300},     # 5 requests per 5 minutes
+    'search': {'requests': 30, 'window': 60},     # 30 requests per minute
+    'default': {'requests': 60, 'window': 60},    # 60 requests per minute
+}
 
 ROOT_URLCONF = 'gis_project.urls'
 

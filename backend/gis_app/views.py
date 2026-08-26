@@ -23,7 +23,7 @@ from .models import (
     StagingRoad, StagingBuilding, StagingLandUse, StagingFacility,
     StagingStreetLight, StagingWaterLine, StagingWaterNode, StagingSewerLine,
     StagingManhole, StagingSewerJunction, StagingElectricalLine, StagingElectricalNode,
-    StagingFiberLine, StagingFiberNode
+    StagingFiberLine, StagingFiberNode, UserRegistrationRequest
 )
 from .serializers import (
     SurveySessionSerializer, UploadedFileSerializer, ProcessingJobSerializer,
@@ -487,8 +487,8 @@ class SearchView(views.APIView):
 # ==========================================
 class RegisterView(views.APIView):
     """
-    Public self-service registration. New accounts are automatically added to
-    the 'Registered User' group (read-only privileges on the GIS data).
+    Public self-service registration. Creates a pending registration request
+    that requires admin approval before the account is activated.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -496,6 +496,8 @@ class RegisterView(views.APIView):
         username = request.data.get('username', '').strip()
         email = request.data.get('email', '').strip()
         password = request.data.get('password', '')
+        first_name = request.data.get('first_name', '').strip()
+        last_name = request.data.get('last_name', '').strip()
 
         if not username or not password:
             return Response(
@@ -509,25 +511,34 @@ class RegisterView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user = User.objects.create_user(username=username, email=email, password=password)
-        registered_group, _ = Group.objects.get_or_create(name='Registered User')
-        user.groups.add(registered_group)
+        # Create user as inactive until approved
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            is_active=False  # Inactive until admin approves
+        )
 
-        refresh = RefreshToken.for_user(user)
+        # Create pending registration request
+        registration = UserRegistrationRequest.objects.create(
+            user=user,
+            status=UserRegistrationRequest.Status.PENDING
+        )
+
         return Response(
             {
-                "user": UserSerializer(user).data,
-                "role": primary_role(user),
-                "roles": user_roles(user),
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
+                "message": "Registration request submitted. An administrator will review your account.",
+                "username": user.username,
+                "status": "PENDING"
             },
             status=status.HTTP_201_CREATED
         )
 
 
 class MeView(views.APIView):
-    """Returns the authenticated user's profile and derived role."""
+    """Returns the authenticated user's profile and derived role. Supports PATCH for updates."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -536,6 +547,26 @@ class MeView(views.APIView):
             "user": UserSerializer(user).data,
             "role": primary_role(user),
             "roles": user_roles(user),
+        })
+
+    def patch(self, request):
+        user = request.user
+        allowed_fields = ['email', 'first_name', 'last_name']
+        updated = []
+
+        for field in allowed_fields:
+            if field in request.data:
+                setattr(user, field, request.data[field])
+                updated.append(field)
+
+        if updated:
+            user.save(update_fields=updated)
+
+        return Response({
+            "user": UserSerializer(user).data,
+            "role": primary_role(user),
+            "roles": user_roles(user),
+            "updated_fields": updated,
         })
 
 

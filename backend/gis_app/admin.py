@@ -8,7 +8,8 @@ from .models import (
     WaterLine, StagingWaterLine, WaterNode, StagingWaterNode,
     SewerLine, StagingSewerLine, Manhole, StagingManhole, SewerJunction, StagingSewerJunction,
     ElectricalLine, StagingElectricalLine, ElectricalNode, StagingElectricalNode,
-    FiberLine, StagingFiberLine, FiberNode, StagingFiberNode, FacilityCategory
+    FiberLine, StagingFiberLine, FiberNode, StagingFiberNode, FacilityCategory,
+    UserRegistrationRequest
 )
 
 
@@ -269,3 +270,63 @@ class FiberNodeAdmin(BaseGISAdmin):
 @admin.register(StagingFiberNode)
 class StagingFiberNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'session')
+
+
+# --- USER REGISTRATION REQUESTS ---
+@admin.register(UserRegistrationRequest)
+class UserRegistrationRequestAdmin(admin.ModelAdmin):
+    list_display = ['user', 'status', 'created_at', 'approved_by', 'approved_at']
+    list_filter = ['status', 'created_at']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['created_at', 'updated_at']
+    actions = ['approve_registrations', 'reject_registrations']
+
+    def approve_registrations(self, request, queryset):
+        """Approve selected registration requests and activate accounts."""
+        from django.utils import timezone
+        approved_count = 0
+
+        for req in queryset.filter(status=UserRegistrationRequest.Status.PENDING):
+            # Activate the user
+            user = req.user
+            user.is_active = True
+            user.save()
+
+            # Add to Registered User group
+            registered_group, _ = Group.objects.get_or_create(name='Registered User')
+            user.groups.add(registered_group)
+
+            # Update registration request
+            req.status = UserRegistrationRequest.Status.APPROVED
+            req.approved_by = request.user
+            req.approved_at = timezone.now()
+            req.save()
+
+            approved_count += 1
+
+        self.message_user(request, f"Approved {approved_count} registration(s). Accounts are now active.")
+
+    approve_registrations.short_description = "Approve selected registrations"
+
+    def reject_registrations(self, request, queryset):
+        """Reject selected registration requests and deactivate accounts."""
+        from django.utils import timezone
+        rejected_count = 0
+
+        for req in queryset.filter(status=UserRegistrationRequest.Status.PENDING):
+            # Deactivate the user
+            user = req.user
+            user.is_active = False
+            user.save()
+
+            # Update registration request
+            req.status = UserRegistrationRequest.Status.REJECTED
+            req.approved_by = request.user
+            req.approved_at = timezone.now()
+            req.save()
+
+            rejected_count += 1
+
+        self.message_user(request, f"Rejected {rejected_count} registration(s).")
+
+    reject_registrations.short_description = "Reject selected registrations"
