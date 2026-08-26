@@ -13,6 +13,7 @@ from rest_framework import viewsets, permissions, status, views
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.http import HttpResponse
 
 from .models import (
     SurveySession, UploadedFile, ProcessingJob, ApprovalHistory,
