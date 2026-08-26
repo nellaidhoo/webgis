@@ -23,17 +23,19 @@ class RateLimitMiddleware:
     
     def __init__(self, get_response):
         self.get_response = get_response
-        self.rate_limits = getattr(self, 'get_rate_limits', {})
-    
-    def get_rate_limits(self):
-        """Get rate limits from Django settings."""
-        from django.conf import settings
-        return getattr(settings, 'RATE_LIMITS', {
-            'auth': {'requests': 10, 'window': 60},
-            'upload': {'requests': 5, 'window': 300},
-            'search': {'requests': 30, 'window': 60},
-            'default': {'requests': 60, 'window': 60},
-        })
+        self._rate_limits = None
+
+    @property
+    def rate_limits(self):
+        if self._rate_limits is None:
+            from django.conf import settings
+            self._rate_limits = getattr(settings, 'RATE_LIMITS', {
+                'auth': {'requests': 10, 'window': 60},
+                'upload': {'requests': 5, 'window': 300},
+                'search': {'requests': 30, 'window': 60},
+                'default': {'requests': 60, 'window': 60},
+            })
+        return self._rate_limits
     
     def __call__(self, request):
         # Skip rate limiting for non-API requests
