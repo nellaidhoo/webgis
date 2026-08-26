@@ -1,0 +1,17 @@
+[Unit]
+Description=WebGIS Next.js frontend
+After=network.target
+
+[Service]
+Type=simple
+User=webgis
+Group=webgis
+WorkingDirectory=/opt/webgis/frontend
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_API_URL=http://localhost/api
+ExecStart=/opt/webgis/frontend/node_modules/.bin/next start -p 3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

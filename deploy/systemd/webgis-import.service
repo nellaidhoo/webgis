@@ -1,0 +1,17 @@
+[Unit]
+Description=WebGIS FastAPI import service (uvicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=webgis
+Group=webgis
+WorkingDirectory=/opt/webgis/import_service
+EnvironmentFile=/opt/webgis/import_service/.env
+ExecStart=/opt/webgis/import_service/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

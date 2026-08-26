@@ -1,0 +1,17 @@
+[Unit]
+Description=WebGIS Django REST API (gunicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=webgis
+Group=webgis
+WorkingDirectory=/opt/webgis/backend
+EnvironmentFile=/opt/webgis/backend/.env
+ExecStart=/opt/webgis/backend/.venv/bin/gunicorn gis_project.wsgi:application --bind 127.0.0.1:8000 --workers 3
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

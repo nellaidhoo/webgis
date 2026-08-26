@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Micro Plant · nursery + CMS</title>
+  <!-- Google Font & simple reset -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f6faf5;
+      color: #1e2f23;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    /* header / nav */
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 0 1rem;
+      border-bottom: 1px solid #dce8da;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      font-size: 1.8rem;
+      letter-spacing: -0.02em;
+      color: #1e4a2b;
+    }
+
+    .logo span {
+      background: #2b6e3c;
+      color: white;
+      font-size: 1.2rem;
+      padding: 0.2rem 0.7rem;
+      border-radius: 40px;
+      margin-left: 0.2rem;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2.2rem;
+      font-weight: 500;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: #1e3a2a;
+      font-size: 1rem;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: #3f8a4e;
+    }
+
+    .btn-outline {
+      border: 1.5px solid #2b6e3c;
+      padding: 0.4rem 1.2rem;
+      border-radius: 40px;
+      background: transparent;
+      font-weight: 600;
+      color: #1e4a2b;
+      transition: 0.2s;
+      cursor: pointer;
+    }
+
+    .btn-outline:hover {
+      background: #2b6e3c;
+      color: white;
+    }
+
+    /* hero */
+    .hero {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3rem 0 2rem;
+      gap: 2rem;
+    }
+
+    .hero-text {
+      flex: 1 1 300px;
+    }
+
+    .hero-text h1 {
+      font-size: 3.2rem;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: #13301d;
+    }
+
+    .hero-text h1 i {
+      color: #3b8a4b;
+      font-style: normal;
+      background: #e1f0df;
+      padding: 0 0.6rem;
+      border-radius: 20px;
+    }
+
+    .hero-text p {
+      font-size: 1.2rem;
+      color: #2f4d38;
+      margin: 1.5rem 0 2rem;
+      max-width: 480px;
+    }
+
+    .hero-image {
+      flex: 1 1 280px;
+      background: #dce8da;
+      border-radius: 60px 60px 60px 10px;
+      padding: 1.5rem 1.5rem 0.5rem;
+      text-align: center;
+      box-shadow: 0 12px 30px rgba(30, 50, 30, 0.08);
+    }
+
+    .hero-image img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      border-radius: 30px 30px 10px 10px;
+      max-height: 180px;
+      object-fit: contain;
+    }
+
+    .badge-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin: 2rem 0 0.5rem;
+    }
+
+    .badge {
+      background: white;
+      padding: 0.4rem 1.2rem;
+      border-radius: 40px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      border: 1px solid #c7dbc3;
+    }
+
+    /* section title */
+    .section-title {
+      font-size: 2.2rem;
+      font-weight: 600;
+      margin: 3rem 0 1.8rem;
+      letter-spacing: -0.01em;
+      color: #14301e;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: linear-gradient(90deg, #b7d3b0, transparent);
+    }
+
+    /* plant profiles grid */
+    .plant-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+      margin: 1.5rem 0 3rem;
+    }
+
+    .plant-card {
+      background: white;
+      border-radius: 32px;
+      padding: 1.5rem 1.2rem 1.8rem;
+      box-shadow: 0 8px 24px rgba(30, 50, 30, 0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s;
+      border: 1px solid #edf5ea;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .plant-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 20px 30px rgba(40, 70, 40, 0.08);
+      border-color: #bcd9b4;
+    }
+
+    .plant-img {
+      background: #e7f1e3;
+      border-radius: 28px;
+      padding: 0.8rem;
+      margin-bottom: 1.2rem;
+      text-align: center;
+    }
+
+    .plant-img img {
+      max-width: 100%;
+      height: 140px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .plant-card h3 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #1f3d28;
+    }
+
+    .plant-card .sci-name {
+      font-size: 0.9rem;
+      color: #547a5a;
+      font-style: italic;
+      margin: 0.2rem 0 0.6rem;
+    }
+
+    .plant-card .profile-desc {
+      font-size: 0.95rem;
+      color: #2d4a33;
+      margin: 0.5rem 0 0.8rem;
+      flex: 1;
+    }
+
+    .plant-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.8rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #3a5f41;
+      background: #f1f8ef;
+      padding: 0.6rem 0.8rem;
+      border-radius: 40px;
+      margin-top: 0.5rem;
+    }
+
+    .plant-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .tag {
+      background: #dcebd7;
+      padding: 0.15rem 0.8rem;
+      border-radius: 30px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #1b4a27;
+    }
+
+    /* contact section */
+    .contact-section {
+      background: #e6f0e2;
+      border-radius: 60px 60px 30px 30px;
+      padding: 3rem 2.5rem;
+      margin: 3rem 0 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2rem;
+      box-shadow: inset 0 0 0 1px #d0e2c9;
+    }
+
+    .contact-info {
+      flex: 1 1 260px;
+    }
+
+    .contact-info h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1d3d25;
+    }
+
+    .contact-info p {
+      margin: 0.5rem 0 1.2rem;
+      color: #2f5439;
+      max-width: 340px;
+    }
+
+    .contact-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      font-size: 1.05rem;
+    }
+
+    .contact-detail div {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .contact-detail i {
+      font-style: normal;
+      background: #2b6e3c;
+      color: white;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 30px;
+      font-size: 1rem;
+    }
+
+    .contact-cta {
+      background: #1e4a2b;
+      color: white;
+      border: none;
+      padding: 0.9rem 2.2rem;
+      border-radius: 60px;
+      font-weight: 600;
+      font-size: 1.1rem;
+      cursor: default;
+      box-shadow: 0 6px 14px rgba(30, 60, 30, 0.25);
+      transition: 0.15s;
+      align-self: flex-start;
+    }
+
+    .contact-cta:hover {
+      background: #2d6b3f;
+      transform: scale(1.02);
+    }
+
+    .contact-extra {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      color: #1c4026;
+    }
+
+    .footer-note {
+      text-align: center;
+      padding: 2rem 0 1.5rem;
+      color: #4b6b4f;
+      font-size: 0.9rem;
+      border-top: 1px solid #d3e2ce;
+      margin-top: 1rem;
+    }
+
+    /* CMS toggle & admin panel */
+    .cms-toggle {
+      margin: 1rem 0;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .cms-panel {
+      background: #f0f7ed;
+      border-radius: 40px 40px 20px 20px;
+      padding: 2rem 2rem 1.8rem;
+      margin: 1.5rem 0 2rem;
+      border: 1px solid #c7dbc3;
+      display: none;
+    }
+
+    .cms-panel.open {
+      display: block;
+    }
+
+    .cms-panel h3 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin-bottom: 1.2rem;
+      color: #1d3d25;
+    }
+
+    .cms-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem 2rem;
+      align-items: flex-end;
+      margin-bottom: 1.5rem;
+    }
+
+    .cms-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      flex: 1 1 180px;
+    }
+
+    .cms-field label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #1e402a;
+      letter-spacing: 0.02em;
+    }
+
+    .cms-field input, .cms-field textarea {
+      padding: 0.6rem 1rem;
+      border-radius: 30px;
+      border: 1px solid #bcd0b5;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      background: white;
+      transition: 0.15s;
+    }
+
+    .cms-field input:focus, .cms-field textarea:focus {
+      outline: 2px solid #2b6e3c;
+      border-color: transparent;
+    }
+
+    .cms-field textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+
+    .cms-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .btn-primary {
+      background: #2b6e3c;
+      color: white;
+      border: none;
+      padding: 0.6rem 1.8rem;
+      border-radius: 60px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+      font-size: 0.95rem;
+    }
+
+    .btn-primary:hover {
+      background: #1e4a2b;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1.5px solid #2b6e3c;
+      color: #1e4a2b;
+      padding: 0.6rem 1.8rem;
+      border-radius: 60px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+
+    .btn-secondary:hover {
+      background: #dcebd7;
+    }
+
+    .cms-note {
+      font-size: 0.85rem;
+      color: #3f6347;
+      margin-top: 1.2rem;
+      border-top: 1px dashed #bcd0b5;
+      padding-top: 1rem;
+    }
+
+    .cms-note code {
+      background: #e1efe0;
+      padding: 0.1rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+    }
+
+    /* responsive */
+    @media (max-width: 700px) {
+      .navbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .nav-links {
+        justify-content: center;
+        gap: 1.2rem;
+      }
+      .hero-text h1 {
+        font-size: 2.5rem;
+      }
+      .contact-section {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 2rem 1.5rem;
+      }
+      .cms-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 0 1.2rem;
+      }
+      .plant-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <!-- header -->
+    <header class="navbar">
+      <div class="logo">
+        🌱 micro<span>plant</span>
+      </div>
+      <div class="nav-links">
+        <a href="#">Plants</a>
+        <a href="#">Profiles</a>
+        <a href="#">Care</a>
+        <button class="btn-outline" id="toggleCmsBtn">⚙️ Manage</button>
+      </div>
+    </header>
+
+    <!-- CMS Panel -->
+    <div class="cms-panel" id="cmsPanel">
+      <h3>🌿 Content Manager</h3>
+      <p style="margin-bottom: 1.2rem; color: #2f5439;">Edit hero, contact, or plant cards. Images use Cloudflare R2 (simulated).</p>
+
+      <!-- Hero fields -->
+      <div class="cms-row">
+        <div class="cms-field">
+          <label>Hero headline</label>
+          <input type="text" id="heroHeadline" value="tiny leaves, big joy" />
+        </div>
+        <div class="cms-field">
+          <label>Hero subtext</label>
+          <input type="text" id="heroSubtext" value="Discover our curated collection of petite plants — each with its own personality, care story, and charm." />
+        </div>
+      </div>
+
+      <!-- Contact fields -->
+      <div class="cms-row">
+        <div class="cms-field">
+          <label>Address</label>
+          <input type="text" id="contactAddress" value="121 Green Street, Plantville" />
+        </div>
+        <div class="cms-field">
+          <label>Phone</label>
+          <input type="text" id="contactPhone" value="+1 (555) 283 7492" />
+        </div>
+        <div class="cms-field">
+          <label>Email</label>
+          <input type="text" id="contactEmail" value="hello@microplant.nursery" />
+        </div>
+        <div class="cms-field">
+          <label>Hours</label>
+          <input type="text" id="contactHours" value="Mon–Sat · 9am – 6pm" />
+        </div>
+      </div>
+
+      <!-- Plant cards (simplified: we edit first card as demo) -->
+      <div style="margin: 1.5rem 0 0.5rem; font-weight: 600; color: #1d3d25;">✏️ Edit Plant Card (example: Peperomia)</div>
+      <div class="cms-row">
+        <div class="cms-field">
+          <label>Name</label>
+          <input type="text" id="plantName" value="Peperomia" />
+        </div>
+        <div class="cms-field">
+          <label>Scientific name</label>
+          <input type="text" id="plantSci" value="Peperomia obtusifolia" />
+        </div>
+        <div class="cms-field">
+          <label>Description</label>
+          <input type="text" id="plantDesc" value="Compact, glossy leaves with a touch of ruby edge." />
+        </div>
+      </div>
+      <div class="cms-row">
+        <div class="cms-field">
+          <label>Water (icon + text)</label>
+          <input type="text" id="plantWater" value="💧 low" />
+        </div>
+        <div class="cms-field">
+          <label>Light (icon + text)</label>
+          <input type="text" id="plantLight" value="☀️ indirect" />
+        </div>
+        <div class="cms-field">
+          <label>Tag</label>
+          <input type="text" id="plantTag" value="🌱 pet‑friendly" />
+        </div>
+      </div>
+
+      <!-- Image upload simulation (Cloudflare R2 style) -->
+      <div class="cms-row">
+        <div class="cms-field" style="flex: 2;">
+          <label>Plant image URL (Cloudflare R2 / any CDN)</label>
+          <input type="text" id="plantImageUrl" value="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Ccircle cx='60' cy='50' r='28' fill='%233b8a4b'/%3E%3Cpath d='M40 80 L60 65 L80 80' stroke='%235f7a4a' stroke-width='6' fill='none' /%3E%3C/svg%3E" />
+        </div>
+        <div class="cms-field" style="flex: 1;">
+          <label>Hero image URL</label>
+          <input type="text" id="heroImageUrl" value="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='200' viewBox='0 0 300 200'%3E%3Crect width='300' height='200' fill='%23dce8da'/%3E%3Ccircle cx='80' cy='120' r='32' fill='%233b7a44'/%3E%3Ccircle cx='170' cy='100' r='38' fill='%232b6e3c'/%3E%3Ccircle cx='230' cy='130' r='28' fill='%234f8a5a'/%3E%3Crect x='60' y='145' width='40' height='6' fill='%235f7a4a' rx='3'/%3E%3Crect x='150' y='130' width='45' height='6' fill='%235f7a4a' rx='3'/%3E%3Crect x='210' y='152' width='35' height='6' fill='%235f7a4a' rx='3'/%3E%3C/svg%3E" />
+        </div>
+      </div>
+
+      <div class="cms-actions">
+        <button class="btn-primary" id="applyChangesBtn">Apply changes</button>
+        <button class="btn-secondary" id="resetCmsBtn">Reset to default</button>
+      </div>
+      <div class="cms-note">
+        ⚡ Images: paste any URL (Cloudflare R2, Imgur, etc.) or keep SVG data-URIs. 
+        <code>R2 example: https://your-bucket.r2.cloudflarestorage.com/plant.jpg</code>
+      </div>
+    </div>
+
+    <!-- hero -->
+    <section class="hero">
+      <div class="hero-text">
+        <h1 id="heroHeadlineDisplay">tiny leaves, <br /><i>big joy</i></h1>
+        <p id="heroSubtextDisplay">Discover our curated collection of petite plants — each with its own personality, care story, and charm.</p>
+        <div class="badge-group">
+          <span class="badge">🌿 20+ micro varieties</span>
+          <span class="badge">📦 shipped worldwide</span>
+          <span class="badge">💚 100% peat-free</span>
+        </div>
+      </div>
+      <div class="hero-image">
+        <img id="heroImageDisplay" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='200' viewBox='0 0 300 200'%3E%3Crect width='300' height='200' fill='%23dce8da'/%3E%3Ccircle cx='80' cy='120' r='32' fill='%233b7a44'/%3E%3Ccircle cx='170' cy='100' r='38' fill='%232b6e3c'/%3E%3Ccircle cx='230' cy='130' r='28' fill='%234f8a5a'/%3E%3Crect x='60' y='145' width='40' height='6' fill='%235f7a4a' rx='3'/%3E%3Crect x='150' y='130' width='45' height='6' fill='%235f7a4a' rx='3'/%3E%3Crect x='210' y='152' width='35' height='6' fill='%235f7a4a' rx='3'/%3E%3C/svg%3E" alt="micro plants collection" />
+        <p style="margin-top: 0.5rem; font-weight: 500; color: #1f402a;">from our nursery to your home</p>
+      </div>
+    </section>
+
+    <!-- plant profiles -->
+    <div class="section-title">🌿 plant profiles</div>
+    <div class="plant-grid" id="plantGrid">
+      <!-- card 1 (editable via CMS) -->
+      <div class="plant-card" id="plantCard1">
+        <div class="plant-img">
+          <img id="plantImg1" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Ccircle cx='60' cy='50' r='28' fill='%233b8a4b'/%3E%3Cpath d='M40 80 L60 65 L80 80' stroke='%235f7a4a' stroke-width='6' fill='none' /%3E%3C/svg%3E" alt="Peperomia" />
+        </div>
+        <h3 id="plantNameDisplay">Peperomia</h3>
+        <div class="sci-name" id="plantSciDisplay">Peperomia obtusifolia</div>
+        <div class="profile-desc" id="plantDescDisplay">Compact, glossy leaves with a touch of ruby edge. Thrives in bright indirect light.</div>
+        <div class="plant-meta">
+          <span id="plantWaterDisplay">💧 low</span>
+          <span id="plantLightDisplay">☀️ indirect</span>
+          <span class="tag" id="plantTagDisplay">🌱 pet‑friendly</span>
+        </div>
+      </div>
+
+      <!-- card 2 .. 6 are static but can be extended -->
+      <div class="plant-card">
+        <div class="plant-img"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Ccircle cx='55' cy='55' r='26' fill='%234f8a5a'/%3E%3Cpath d='M30 70 L55 55 L80 70' stroke='%234a6b44' stroke-width='5' fill='none' /%3E%3C/svg%3E" alt="Haworthia" /></div>
+        <h3>Haworthia</h3>
+        <div class="sci-name">Haworthia fasciata</div>
+        <div class="profile-desc">Zebra-like stripes, slow-growing succulent. Perfect desk companion.</div>
+        <div class="plant-meta"><span>💧 very low</span><span>☀️ bright</span><span class="tag">✨ air purifier</span></div>
+      </div>
+      <div class="plant-card">
+        <div class="plant-img"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Ccircle cx='65' cy='50' r='26' fill='%232b6e3c'/%3E%3Ccircle cx='40' cy='65' r='20' fill='%233b8a4b'/%3E%3C/svg%3E" alt="Pilea" /></div>
+        <h3>Pilea</h3>
+        <div class="sci-name">Pilea peperomioides</div>
+        <div class="profile-desc">The Chinese money plant — round, cheerful leaves that sprout new pups.</div>
+        <div class="plant-meta"><span>💧 moderate</span><span>☀️ medium light</span><span class="tag">🌿 fast grower</span></div>
+      </div>
+      <div class="plant-card">
+        <div class="plant-img"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Crect x='45' y='35' width='30' height='40' rx='10' fill='%235b8f5e'/%3E%3Ccircle cx='60' cy='40' r='18' fill='%234f8a5a'/%3E%3C/svg%3E" alt="Crassula" /></div>
+        <h3>Crassula</h3>
+        <div class="sci-name">Crassula ovata 'Minima'</div>
+        <div class="profile-desc">Mini jade with thick, oval leaves. Brings a touch of bonsai charm.</div>
+        <div class="plant-meta"><span>💧 low</span><span>☀️ full sun</span><span class="tag">🌱 forgiving</span></div>
+      </div>
+      <div class="plant-card">
+        <div class="plant-img"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Cpath d='M35 80 L60 45 L85 80' stroke='%233b7a44' stroke-width='8' fill='none' /%3E%3Ccircle cx='60' cy='40' r='18' fill='%234f8a5a'/%3E%3C/svg%3E" alt="Fittonia" /></div>
+        <h3>Fittonia</h3>
+        <div class="sci-name">Fittonia albivenis</div>
+        <div class="profile-desc">Nerve plant with striking white veins. Loves humidity and stays petite.</div>
+        <div class="plant-meta"><span>💧 moist</span><span>☀️ low light</span><span class="tag">💨 humidity lover</span></div>
+      </div>
+      <div class="plant-card">
+        <div class="plant-img"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%23e7f1e3'/%3E%3Ccircle cx='60' cy='45' r='24' fill='%233b8a4b'/%3E%3Ccircle cx='45' cy='70' r='14' fill='%235b8f5e'/%3E%3C/svg%3E" alt="Alocasia" /></div>
+        <h3>Alocasia</h3>
+        <div class="sci-name">Alocasia 'Polly'</div>
+        <div class="profile-desc">Arrow-shaped leaves with silver veins. A striking mini jewel.</div>
+        <div class="plant-meta"><span>💧 moderate</span><span>☀️ bright indirect</span><span class="tag">🌴 tropical</span></div>
+      </div>
+    </div>
+
+    <!-- contact section -->
+    <section class="contact-section">
+      <div class="contact-info">
+        <h2>🌱 get in touch</h2>
+        <p>We’d love to hear from you — whether you have a plant question or just want to say hello.</p>
+        <div class="contact-detail">
+          <div><i>📍</i> <span id="contactAddressDisplay">121 Green Street, Plantville</span></div>
+          <div><i>📞</i> <span id="contactPhoneDisplay">+1 (555) 283 7492</span></div>
+          <div><i>✉️</i> <span id="contactEmailDisplay">hello@microplant.nursery</span></div>
+          <div><i>🕘</i> <span id="contactHoursDisplay">Mon–Sat · 9am – 6pm</span></div>
+        </div>
+        <div class="contact-extra" style="margin-top: 1rem;">
+          <span>🌿 we reply within 24h</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1.2rem; align-items: flex-start;">
+        <div class="contact-cta">📬 send a message</div>
+        <div style="display: flex; gap: 0.8rem; flex-wrap: wrap;">
+          <span style="background: white; padding: 0.3rem 1.2rem; border-radius: 40px; font-size: 0.9rem;">Instagram</span>
+          <span style="background: white; padding: 0.3rem 1.2rem; border-radius: 40px; font-size: 0.9rem;">Pinterest</span>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer-note">
+      <p>© 2026 Micro Plant · boutique nursery — rooted in care.</p>
+    </footer>
+  </div>
+
+  <script>
+    (function() {
+      const toggleBtn = document.getElementById('toggleCmsBtn');
+      const cmsPanel = document.getElementById('cmsPanel');
+
+      // DOM refs
+      const heroHeadline = document.getElementById('heroHeadline');
+      const heroSubtext = document.getElementById('heroSubtext');
+      const heroHeadlineDisplay = document.getElementById('heroHeadlineDisplay');
+      const heroSubtextDisplay = document.getElementById('heroSubtextDisplay');
+      const heroImageDisplay = document.getElementById('heroImageDisplay');
+      const heroImageUrl = document.getElementById('heroImageUrl');
+
+      const contactAddress = document.getElementById('contactAddress');
+      const contactPhone = document.getElementById('contactPhone');
+      const contactEmail = document.getElementById('contactEmail');
+      const contactHours = document.getElementById('contactHours');
+      const contactAddressDisplay = document.getElementById('contactAddressDisplay');
+      const contactPhoneDisplay = document.getElementById('contactPhoneDisplay');
+      const contactEmailDisplay = document.getElementById('contactEmailDisplay');
+      const contactHoursDisplay = document.getElementById('contactHoursDisplay');
+
+      const plantName = document.getElementById('plantName');
+      const plantSci = document.getElementById('plantSci');
+      const plantDesc = document.getElementById('plantDesc');
+      const plantWater = document.getElementById('plantWater');
+      const plantLight = document.getElementById('plantLight');
+      const plantTag = document.getElementById('plantTag');
+      const plantImageUrl = document.getElementById('plantImageUrl');
+
+      const plantNameDisplay = document.getElementById('plantNameDisplay');
+      const plantSciDisplay = document.getElementById('plantSciDisplay');
+      const plantDescDisplay = document.getElementById('plantDescDisplay');
+      const plantWaterDisplay = document.getElementById('plantWaterDisplay');
+      const plantLightDisplay = document.getElementById('plantLightDisplay');
+      const plantTagDisplay = document.getElementById('plantTagDisplay');
+      const plantImg1 = document.getElementById('plantImg1');
+
+      // toggle CMS
+      toggleBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        cmsPanel.classList.toggle('open');
+        toggleBtn.textContent = cmsPanel.classList.contains('open') ? '✕ Close' : '⚙️ Manage';
+      });
+
+      // apply changes
+      function applyChanges() {
+        // Hero
+        heroHeadlineDisplay.innerHTML = heroHeadline.value.replace(/\n/g, '<br />');
+        heroSubtextDisplay.textContent = heroSubtext.value;
+        heroImageDisplay.src = heroImageUrl.value;
+
+        // Contact
+        contactAddressDisplay.textContent = contactAddress.value;
+        contactPhoneDisplay.textContent = contactPhone.value;
+        contactEmailDisplay.textContent = contactEmail.value;
+        contactHoursDisplay.textContent = contactHours.value;
+
+        // Plant card 1
+        plantNameDisplay.textContent = plantName.value;
+        plantSciDisplay.textContent = plantSci.value;
+        plantDescDisplay.textContent = plantDesc.value;
+        plantWaterDisplay.textContent = plantWater.value;
+        plantLightDisplay.textContent = plantLight.value;
+        plantTagDisplay.textContent = plantTag.value;
+        plantImg1.src = plantImageUrl.value;
+      }
+
+      document.getElementById('applyChangesBtn').addEventListener('click', applyChanges);
+
+      // reset to defaults (as in initial HTML)
+      document.getElementById('resetCmsBtn').addEventListener('click', function() {
+        heroHeadline.value = 'tiny leaves, big joy';
+        heroSubtext.value = 'Discover our curated collection of petite plants — each with its own personality, care story, and charm.';
+        heroImageUrl.value = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'300\' height=\'200\' viewBox=\'0 0 300 200\'%3E%3Crect width=\'300\' height=\'200\' fill=\'%23dce8da\'/%3E%3Ccircle cx=\'80\' cy=\'120\' r=\'32\' fill=\'%233b7a44\'/%3E%3Ccircle cx=\'170\' cy=\'100\' r=\'38\' fill=\'%232b6e3c\'/%3E%3Ccircle cx=\'230\' cy=\'130\' r=\'28\' fill=\'%234f8a5a\'/%3E%3Crect x=\'60\' y=\'145\' width=\'40\' height=\'6\' fill=\'%235f7a4a\' rx=\'3\'/%3E%3Crect x=\'150\' y=\'130\' width=\'45\' height=\'6\' fill=\'%235f7a4a\' rx=\'3\'/%3E%3Crect x=\'210\' y=\'152\' width=\'35\' height=\'6\' fill=\'%235f7a4a\' rx=\'3\'/%3E%3C/svg%3E';
+
+        contactAddress.value = '121 Green Street, Plantville';
+        contactPhone.value = '+1 (555) 283 7492';
+        contactEmail.value = 'hello@microplant.nursery';
+        contactHours.value = 'Mon–Sat · 9am – 6pm';
+
+        plantName.value = 'Peperomia';
+        plantSci.value = 'Peperomia obtusifolia';
+        plantDesc.value = 'Compact, glossy leaves with a touch of ruby edge.';
+        plantWater.value = '💧 low';
+        plantLight.value = '☀️ indirect';
+        plantTag.value = '🌱 pet‑friendly';
+        plantImageUrl.value = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'120\' height=\'120\' viewBox=\'0 0 120 120\'%3E%3Crect width=\'120\' height=\'120\' fill=\'%23e7f1e3\'/%3E%3Ccircle cx=\'60\' cy=\'50\' r=\'28\' fill=\'%233b8a4b\'/%3E%3Cpath d=\'M40 80 L60 65 L80 80\' stroke=\'%235f7a4a\' stroke-width=\'6\' fill=\'none\' /%3E%3C/svg%3E';
+
+        applyChanges();
+      });
+
+      // initial sync
+      applyChanges();
+    })();
+  </script>
+</body>
+</html>

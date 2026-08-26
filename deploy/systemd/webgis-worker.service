@@ -1,0 +1,17 @@
+[Unit]
+Description=WebGIS Celery worker
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=webgis
+Group=webgis
+WorkingDirectory=/opt/webgis/backend
+EnvironmentFile=/opt/webgis/backend/.env
+ExecStart=/opt/webgis/backend/.venv/bin/celery -A gis_project worker --loglevel=info
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
