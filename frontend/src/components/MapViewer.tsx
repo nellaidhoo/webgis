@@ -10,6 +10,7 @@ import {
 import SearchBar from './SearchBar';
 import AdminPanel from './AdminPanel';
 import ApprovalDashboard from './ApprovalDashboard';
+import { useToast } from './ToastProvider';
 
 // Helper to fix Leaflet marker icons in Next.js
 const fixLeafletIcons = () => {
@@ -26,6 +27,7 @@ interface MapViewerProps {
 }
 
 export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapViewerProps) {
+  const { toast, confirm } = useToast();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   
@@ -654,7 +656,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     }
 
     if (latlngs.length <= (poly instanceof L.Polygon ? 3 : 2)) {
-      alert("Cannot delete vertex. Minimum geometries vertices requirement met.");
+      toast("Cannot delete vertex. Minimum geometries vertices requirement met.", 'warning');
       return;
     }
 
@@ -717,13 +719,13 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       
-      alert("Geometry updated successfully in draft!");
+      toast("Geometry updated successfully in draft!", 'success');
       cancelEditing();
       fetchData(); // Reload map vector layers
     } catch (err) {
       // Mock local success state for demo since real POST requires backend
       console.warn("API unavailable, updating locally for presentation.", err);
-      alert("Geometry updated successfully (Local Simulation Mode)!");
+      toast("Geometry updated successfully (Local Simulation Mode)!", 'success');
       
       // Update selected state locally
       setSelectedFeature((prev: any) => ({
@@ -767,7 +769,8 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
 
   const deleteFeature = async () => {
     if (!selectedFeature) return;
-    if (!confirm("Are you sure you want to flag this asset as INACTIVE? This acts as a soft-delete draft requiring admin merge.")) return;
+    const ok = await confirm("Are you sure you want to flag this asset as INACTIVE? This acts as a soft-delete draft requiring admin merge.");
+    if (!ok) return;
 
     const layerName = selectedFeature.layerName;
     const featureId = selectedFeature.data.id;
@@ -784,12 +787,12 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
       });
 
       if (!res.ok) throw new Error();
-      alert("Asset marked as INACTIVE.");
+      toast("Asset marked as INACTIVE.", 'success');
       setSelectedFeature(null);
       fetchData();
     } catch (err) {
       console.warn("Mocking soft delete locally", err);
-      alert("Asset marked as INACTIVE (Local Simulation Mode)!");
+      toast("Asset marked as INACTIVE (Local Simulation Mode)!", 'success');
       
       // Remove layer representation on map
       const originalLayer = selectedFeature.leafletLayer;

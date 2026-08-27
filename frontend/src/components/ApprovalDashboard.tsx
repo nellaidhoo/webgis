@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { useToast } from './ToastProvider';
 import { 
   X, Database, Upload, CheckCircle2, AlertTriangle, Play, RefreshCw, 
   Trash2, FileCode, Check, AlertOctagon, Terminal, Eye, HelpCircle, Image as ImageIcon 
@@ -18,6 +19,7 @@ interface ApprovalDashboardProps {
 export default function ApprovalDashboard({ 
   apiBaseUrl, token, role, onClose, onRefreshData 
 }: ApprovalDashboardProps) {
+  const { toast, confirm } = useToast();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -77,9 +79,12 @@ export default function ApprovalDashboard({
     formData.append('notes', notes);
 
     try {
-      // Direct call to FastAPI Import Service mapped via Nginx gateway at /api/import/
-      const uploadUrl = apiBaseUrl.replace('/api', '/api/import');
-      const res = await fetch(`${uploadUrl}/import/`, {
+      // Route to the FastAPI Import Service.
+      // In production: nginx maps /api/import/ -> 127.0.0.1:8001, stripping the
+      // prefix, so uvicorn sees /import/. In local dev the import service runs
+      // directly on port 8001, so point there explicitly.
+      const importBaseUrl = process.env.NEXT_PUBLIC_IMPORT_URL || apiBaseUrl.replace('/api', '/api/import');
+      const res = await fetch(`${importBaseUrl}/import/`, {
         method: 'POST',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formData
@@ -90,7 +95,7 @@ export default function ApprovalDashboard({
         throw new Error(errData.detail || `Upload failed with status ${res.status}`);
       }
 
-      alert("Ingestion initiated! The file is processing in the Celery background queue.");
+      toast("Ingestion initiated! The file is processing in the Celery background queue.", 'success');
       setFile(null);
       setNotes('');
       fetchSessions();
@@ -102,7 +107,8 @@ export default function ApprovalDashboard({
   };
 
   const handleApproveMerge = async (sessionId: string) => {
-    if (!confirm("Are you sure you want to merge this session into production? Geometries will be upserted transactionally.")) return;
+    const ok = await confirm("Are you sure you want to merge this session into production? Geometries will be upserted transactionally.");
+    if (!ok) return;
 
     try {
       const res = await fetch(`${apiBaseUrl}/survey-sessions/${sessionId}/approve/`, {
@@ -118,13 +124,13 @@ export default function ApprovalDashboard({
         throw new Error(err.error || "Approval request failed.");
       }
 
-      alert("Staging geometries merged successfully into active production tables!");
+      toast("Staging geometries merged successfully into active production tables!", 'success');
       fetchSessions();
       onRefreshData(); // Trigger parent Map refresh
     } catch (err: any) {
       console.warn("Failed to contact endpoint, running local mock merge", err);
       // Fallback presentation mode
-      alert("Merged successfully (Local Presentation Mode)!");
+      toast("Merged successfully (Local Presentation Mode)!", 'success');
       // Manually update local session state
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'APPROVED' } : s));
       onRefreshData();
@@ -132,7 +138,8 @@ export default function ApprovalDashboard({
   };
 
   const handleRejectDiscard = async (sessionId: string) => {
-    if (!confirm("Are you sure you want to reject this session? All staged geometries will be permanently purged.")) return;
+    const ok = await confirm("Are you sure you want to reject this session? All staged geometries will be permanently purged.");
+    if (!ok) return;
 
     try {
       const res = await fetch(`${apiBaseUrl}/survey-sessions/${sessionId}/reject/`, {
@@ -145,10 +152,10 @@ export default function ApprovalDashboard({
 
       if (!res.ok) throw new Error();
 
-      alert("Session rejected and staging records purged.");
+      toast("Session rejected and staging records purged.", 'success');
       fetchSessions();
     } catch (err) {
-      alert("Session rejected (Local Presentation Mode)!");
+      toast("Session rejected (Local Presentation Mode)!", 'warning');
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'REJECTED' } : s));
     }
   };

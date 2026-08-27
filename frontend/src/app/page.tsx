@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import ToastProvider from '@/components/ToastProvider';
 
 // Dynamically import MapViewer to bypass Next.js SSR window errors
 const MapViewer = dynamic(() => import('@/components/MapViewer'), {
@@ -18,7 +19,9 @@ export default function Home() {
 
   return (
     <main className="w-full h-full">
-      <MapViewer apiBaseUrl={apiBaseUrl} />
+      <ToastProvider>
+        <MapViewer apiBaseUrl={apiBaseUrl} />
+      </ToastProvider>
     </main>
   );
 }
