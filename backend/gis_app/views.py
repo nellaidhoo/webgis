@@ -707,3 +707,118 @@ class MetricsView(views.APIView):
             'metrics': metrics.get_all_metrics(),
             'timestamp': datetime.now().isoformat()
         })
+
+
+class ExportView(views.APIView):
+    """
+    Export GIS data in various formats (GeoJSON, CSV, Shapefile).
+    
+    GET /api/export/<layer>/?export_format=geojson&bbox=min_lon,min_lat,max_lon,max_lat&filters=status=APPROVED
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, layer):
+        from .export import DataExporter, get_supported_layers, get_supported_formats
+        from .metrics import metrics
+        
+        # Track export request
+        metrics.increment('exports.total')
+        
+        # Parse parameters - use 'export_format' to avoid DRF's 'format' query param conflict
+        fmt = request.query_params.get('export_format', request.query_params.get('format', 'geojson'))
+        bbox_str = request.query_params.get('bbox')
+        filters_str = request.query_params.get('filters')
+        
+        # Validate format
+        if fmt not in get_supported_formats():
+            return Response(
+                {"error": f"Unsupported format '{fmt}'. Valid: {get_supported_formats()}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate layer
+        if layer not in get_supported_layers():
+            return Response(
+                {"error": f"Unsupported layer '{layer}'. Valid: {get_supported_layers()}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Parse bbox
+        bbox = None
+        if bbox_str:
+            try:
+                coords = [float(c) for c in bbox_str.split(',')]
+                if len(coords) == 4:
+                    bbox = tuple(coords)
+                else:
+                    return Response(
+                        {"error": "bbox must have 4 values: min_lon,min_lat,max_lon,max_lat"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "bbox values must be numbers"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Parse filters
+        filters = {}
+        if filters_str:
+            for pair in filters_str.split('&'):
+                if '=' in pair:
+                    key, value = pair.split('=', 1)
+                    filters[key] = value
+        
+        try:
+            exporter = DataExporter(
+                layer=layer,
+                fmt=fmt,
+                filters=filters,
+                bbox=bbox,
+                user=request.user if request.user.is_authenticated else None
+            )
+            
+            data, content_type, ext = exporter.export()
+            
+            # Track success
+            metrics.increment(f'exports.{fmt}')
+            
+            # Build response
+            if fmt == 'geojson':
+                return Response(
+                    json.loads(data),
+                    content_type=content_type
+                )
+            else:
+                response = HttpResponse(data, content_type=content_type)
+                response['Content-Disposition'] = f'attachment; filename="{layer}.{ext}"'
+                return response
+                
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            metrics.increment('exports.errors')
+            return Response(
+                {"error": f"Export failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ExportLayersView(views.APIView):
+    """List all available export layers and formats."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from .export import get_supported_layers, get_supported_formats
+        
+        return Response({
+            "layers": get_supported_layers(),
+            "formats": get_supported_formats(),
+            "example": {
+                "geojson": "/api/export/roads/?format=geojson",
+                "csv": "/api/export/buildings/?format=csv",
+                "shapefile": "/api/export/facilities/?format=shapefile",
+                "with_bbox": "/api/export/roads/?format=geojson&bbox=72.5,4.2,73.0,4.8",
+                "with_filters": "/api/export/facilities/?format=geojson&filters=status=ACTIVE"
+            }
+        })

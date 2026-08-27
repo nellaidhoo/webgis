@@ -12,4 +12,5 @@ gunicorn>=21.2.0
 ezdxf>=1.1.0
 shapely>=2.0.1
 pyproj>=3.6.0
+drf-spectacular>=0.27.0
 

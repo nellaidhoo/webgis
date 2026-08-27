@@ -5,7 +5,8 @@ from .views import (
     StreetLightViewSet, WaterLineViewSet, WaterNodeViewSet, SewerLineViewSet,
     ManholeViewSet, SewerJunctionViewSet, ElectricalLineViewSet, ElectricalNodeViewSet,
     FiberLineViewSet, FiberNodeViewSet, SurveySessionViewSet, AuditLogViewSet,
-    SearchView, RegisterView, MeView, HealthCheckView, VectorTileView, MetricsView
+    SearchView, RegisterView, MeView, HealthCheckView, VectorTileView, MetricsView,
+    ExportView, ExportLayersView
 )
 
 router = DefaultRouter()
@@ -46,4 +47,7 @@ urlpatterns = [
     path('tiles/<str:layer>/<int:z>/<int:x>/<int:y>/', VectorTileView.as_view(), name='vector-tiles'),
     # Metrics endpoint
     path('metrics/', MetricsView.as_view(), name='metrics'),
+    # Export endpoints
+    path('export/', ExportLayersView.as_view(), name='export-layers'),
+    path('export/<str:layer>/', ExportView.as_view(), name='export-layer'),
 ]
