@@ -17,6 +17,8 @@ class BaseGISAdmin(GISModelAdmin):
     """Base admin for GIS models using an OpenLayers map widget."""
     list_display = ('id', 'asset_code', 'status', 'survey_date', 'updated_at')
     readonly_fields = ('id', 'created_by', 'updated_at')
+    list_filter = ('status', 'survey_date')
+    search_fields = ('asset_code',)
 
 
 # --- FACILITY CATEGORIES ---
@@ -138,138 +140,189 @@ class AuditLogAdmin(admin.ModelAdmin):
 @admin.register(Road)
 class RoadAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'road_name', 'road_code', 'surface_type', 'status')
+    list_filter = ('status', 'surface_type')
+    search_fields = ('asset_code', 'road_name', 'road_code')
 
 
 @admin.register(StagingRoad)
 class StagingRoadAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'road_name', 'road_code', 'session')
+    list_filter = ('session__status', 'surface_type')
+    search_fields = ('asset_code', 'road_name', 'road_code')
 
 
 @admin.register(Building)
 class BuildingAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'building_code', 'house_name', 'building_type', 'status')
+    list_filter = ('status', 'building_type')
+    search_fields = ('asset_code', 'building_code', 'house_name', 'usage')
 
 
 @admin.register(StagingBuilding)
 class StagingBuildingAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'building_code', 'house_name', 'session')
+    list_filter = ('session__status', 'building_type')
+    search_fields = ('asset_code', 'building_code', 'house_name')
 
 
 @admin.register(Address)
 class AddressAdmin(admin.ModelAdmin):
     list_display = ('asset_code', 'address_label', 'building', 'road')
-    search_fields = ('address_label', 'asset_code')
+    list_filter = ('building', 'road')
+    search_fields = ('address_label', 'asset_code', 'building__building_code', 'road__road_name')
 
 
 @admin.register(LandUse)
 class LandUseAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'zone_class', 'zone_name', 'status')
+    list_filter = ('status', 'zone_class')
+    search_fields = ('asset_code', 'zone_class', 'zone_name')
 
 
 @admin.register(StagingLandUse)
 class StagingLandUseAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'zone_class', 'zone_name', 'session')
+    list_filter = ('session__status', 'zone_class')
+    search_fields = ('asset_code', 'zone_class', 'zone_name')
 
 
 # --- UTILITY NETWORK ASSETS ---
 @admin.register(StreetLight)
 class StreetLightAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'light_type', 'status')
+    list_filter = ('status', 'light_type')
+    search_fields = ('asset_code', 'light_type')
 
 
 @admin.register(StagingStreetLight)
 class StagingStreetLightAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'light_type', 'session')
+    list_filter = ('session__status', 'light_type')
+    search_fields = ('asset_code', 'light_type')
 
 
 @admin.register(WaterLine)
 class WaterLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'diameter_mm', 'pipe_material', 'status')
+    list_filter = ('status', 'pipe_material')
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingWaterLine)
 class StagingWaterLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'diameter_mm', 'pipe_material', 'session')
+    list_filter = ('session__status', 'pipe_material')
+    search_fields = ('asset_code',)
 
 
 @admin.register(WaterNode)
 class WaterNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'status')
+    list_filter = ('status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 @admin.register(StagingWaterNode)
 class StagingWaterNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'session')
+    list_filter = ('session__status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 @admin.register(SewerLine)
 class SewerLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'diameter_mm', 'pipe_material', 'status')
+    list_filter = ('status', 'pipe_material')
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingSewerLine)
 class StagingSewerLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'diameter_mm', 'pipe_material', 'session')
+    list_filter = ('session__status', 'pipe_material')
+    search_fields = ('asset_code',)
 
 
 @admin.register(Manhole)
 class ManholeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'depth_m', 'status')
+    list_filter = ('status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingManhole)
 class StagingManholeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'depth_m', 'session')
+    list_filter = ('session__status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(SewerJunction)
 class SewerJunctionAdmin(BaseGISAdmin):
-    pass
+    list_filter = ('status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingSewerJunction)
 class StagingSewerJunctionAdmin(BaseGISAdmin):
-    pass
+    list_filter = ('session__status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(ElectricalLine)
 class ElectricalLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'voltage', 'cable_type', 'status')
+    list_filter = ('status', 'cable_type')
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingElectricalLine)
 class StagingElectricalLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'voltage', 'cable_type', 'session')
+    list_filter = ('session__status', 'cable_type')
+    search_fields = ('asset_code',)
 
 
 @admin.register(ElectricalNode)
 class ElectricalNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'capacity_kva', 'status')
+    list_filter = ('status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 @admin.register(StagingElectricalNode)
 class StagingElectricalNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'capacity_kva', 'session')
+    list_filter = ('session__status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 @admin.register(FiberLine)
 class FiberLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'core_count', 'status')
+    list_filter = ('status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(StagingFiberLine)
 class StagingFiberLineAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'core_count', 'session')
+    list_filter = ('session__status',)
+    search_fields = ('asset_code',)
 
 
 @admin.register(FiberNode)
 class FiberNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'status')
+    list_filter = ('status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 @admin.register(StagingFiberNode)
 class StagingFiberNodeAdmin(BaseGISAdmin):
     list_display = ('asset_code', 'node_type', 'session')
+    list_filter = ('session__status', 'node_type')
+    search_fields = ('asset_code', 'node_type')
 
 
 # --- USER REGISTRATION REQUESTS ---
