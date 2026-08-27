@@ -54,6 +54,7 @@ RATE_LIMITS = {
     'auth': {'requests': 10, 'window': 60},      # 10 requests per minute
     'upload': {'requests': 5, 'window': 300},     # 5 requests per 5 minutes
     'search': {'requests': 30, 'window': 60},     # 30 requests per minute
+    'export': {'requests': 20, 'window': 60},     # 20 requests per minute
     'default': {'requests': 60, 'window': 60},    # 60 requests per minute
 }
 
@@ -167,6 +168,16 @@ SIMPLE_JWT = {
 
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = True  # In dev, restrict in prod
+
+# Email Configuration
+EMAIL_BACKEND = env.str('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env.str('EMAIL_HOST', 'localhost')
+EMAIL_PORT = env.int('EMAIL_PORT', 587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', True)
+EMAIL_HOST_USER = env.str('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = env.str('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = env.str('DEFAULT_FROM_EMAIL', 'WebGIS <noreply@webgis.local>')
+ADMIN_EMAIL = env.str('ADMIN_EMAIL', 'admin@webgis.local')
 
 # Celery Configuration
 CELERY_BROKER_URL = env.str('REDIS_URL', 'redis://localhost:6379/0')

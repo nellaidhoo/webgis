@@ -284,6 +284,7 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
     def approve_registrations(self, request, queryset):
         """Approve selected registration requests and activate accounts."""
         from django.utils import timezone
+        from .notifications import notify_registration_approved
         approved_count = 0
 
         for req in queryset.filter(status=UserRegistrationRequest.Status.PENDING):
@@ -302,6 +303,9 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
             req.approved_at = timezone.now()
             req.save()
 
+            # Send email notification
+            notify_registration_approved(user)
+
             approved_count += 1
 
         self.message_user(request, f"Approved {approved_count} registration(s). Accounts are now active.")
@@ -311,6 +315,7 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
     def reject_registrations(self, request, queryset):
         """Reject selected registration requests and deactivate accounts."""
         from django.utils import timezone
+        from .notifications import notify_registration_rejected
         rejected_count = 0
 
         for req in queryset.filter(status=UserRegistrationRequest.Status.PENDING):
@@ -324,6 +329,9 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
             req.approved_by = request.user
             req.approved_at = timezone.now()
             req.save()
+
+            # Send email notification
+            notify_registration_rejected(user, req.rejection_reason)
 
             rejected_count += 1
 

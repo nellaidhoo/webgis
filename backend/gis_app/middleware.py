@@ -74,6 +74,8 @@ class RateLimitMiddleware:
             return 'upload'
         elif '/search/' in path:
             return 'search'
+        elif '/export/' in path:
+            return 'export'
         else:
             return 'default'
     

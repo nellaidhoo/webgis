@@ -511,6 +511,12 @@ class RegisterView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if email and User.objects.filter(email=email).exists():
+            return Response(
+                {"error": "A user with this email already exists."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Create user as inactive until approved
         user = User.objects.create_user(
             username=username,
@@ -526,6 +532,13 @@ class RegisterView(views.APIView):
             user=user,
             status=UserRegistrationRequest.Status.PENDING
         )
+
+        # Notify admin of pending registration
+        try:
+            from .notifications import notify_registration_pending
+            notify_registration_pending(user)
+        except Exception:
+            pass  # Don't fail registration if email fails
 
         return Response(
             {
