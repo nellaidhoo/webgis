@@ -44,6 +44,9 @@ class RateLimitMiddleware:
         
         # Determine rate limit category
         category = self.get_category(request)
+        if category is None:
+            return self.get_response(request)
+        
         limits = self.rate_limits.get(category, self.rate_limits.get('default', {'requests': 60, 'window': 60}))
         
         # Get client identifier
@@ -65,7 +68,7 @@ class RateLimitMiddleware:
         return self.get_response(request)
     
     def get_category(self, request):
-        """Determine rate limit category based on request path."""
+        """Determine rate limit category based on request path. Returns None for no limit."""
         path = request.path.lower()
         
         if '/auth/' in path:
@@ -77,7 +80,7 @@ class RateLimitMiddleware:
         elif '/export/' in path:
             return 'export'
         else:
-            return 'default'
+            return None  # No rate limit on data reads
     
     def get_client_id(self, request):
         """Get unique client identifier (IP + user agent)."""
