@@ -52,7 +52,7 @@ MIDDLEWARE = [
 # Rate Limiting Configuration
 RATE_LIMITS = {
     'auth': {'requests': 10, 'window': 60},      # 10 requests per minute
-    'upload': {'requests': 5, 'window': 300},     # 5 requests per 5 minutes
+    'upload': {'requests': 20, 'window': 600},    # 20 requests per 10 minutes
     'search': {'requests': 30, 'window': 60},     # 30 requests per minute
     'export': {'requests': 20, 'window': 60},     # 20 requests per minute
     'default': {'requests': 60, 'window': 60},    # 60 requests per minute
