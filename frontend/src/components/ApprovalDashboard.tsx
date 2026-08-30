@@ -46,7 +46,7 @@ export default function ApprovalDashboard({
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/survey-sessions/`, {
+      const res = await fetch(`${apiBaseUrl}/survey-sessions/?limit=200`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (res.ok) {

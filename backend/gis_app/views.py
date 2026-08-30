@@ -12,6 +12,7 @@ from django.contrib.gis.db.models.functions import Distance
 from rest_framework import viewsets, permissions, status, views
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse
 
@@ -197,6 +198,7 @@ class SurveySessionViewSet(viewsets.ModelViewSet):
     queryset = SurveySession.objects.all().order_by('-created_at')
     serializer_class = SurveySessionSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LimitOffsetPagination
 
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
@@ -208,6 +210,9 @@ class SurveySessionViewSet(viewsets.ModelViewSet):
         session_type = self.request.query_params.get('session_type')
         if session_type:
             qs = qs.filter(session_type=session_type)
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
         return qs
 
     # Public discovery endpoint for the latest published orthophoto tiles

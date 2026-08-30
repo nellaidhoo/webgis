@@ -188,6 +188,19 @@ async def precheck_survey(
     else:
         session_type = "SURVEY" if file_ext == ".dxf" else "IMAGERY"
 
+    # 1b. Content-Type sanity check (catches renamed/non-matching files)
+    #     Non-blocking: provenance info users may spoof; the actual parser is the arbiter.
+    expected_ct = "application/dxf" if file_ext == ".dxf" else "image/tiff"
+    actual_ct = (file.content_type or "").lower()
+    if actual_ct not in ("application/dxf", "image/tiff", "application/octet-stream", ""):
+        # Report genuinely unexpected types (e.g. application/x-msdownload renamed .exe)
+        warnings.append(
+            f"Unexpected content-type '{file.content_type}' for a {file_ext} file. "
+            f"Expected ~'{expected_ct}'. Verify this is not a renamed executable."
+        )
+    elif actual_ct == "application/octet-stream":
+        warnings.append("File reported as generic binary (application/octet-stream); relying on extension + parser.")
+
     # 2. Read content + size validation
     file_content = await file.read()
     file_size = len(file_content)

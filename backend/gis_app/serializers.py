@@ -229,26 +229,30 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 # --- STAGING (DRAFT) SERIALIZERS ---
 # Used by the staged preview endpoint to review unmerged survey features.
-class StagingRoadSerializer(serializers.ModelSerializer):
+class StagingRoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingRoad
         fields = '__all__'
 
-class StagingBuildingSerializer(serializers.ModelSerializer):
+class StagingBuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingBuilding
         fields = '__all__'
 
-class StagingLandUseSerializer(serializers.ModelSerializer):
+class StagingLandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingLandUse
         fields = '__all__'
 
-class StagingFacilitySerializer(serializers.ModelSerializer):
+class StagingFacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
 
     class Meta:
@@ -258,62 +262,72 @@ class StagingFacilitySerializer(serializers.ModelSerializer):
     def get_category(self, obj):
         return obj.category.name if obj.category else obj.category_old
 
-class StagingStreetLightSerializer(serializers.ModelSerializer):
+class StagingStreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingStreetLight
         fields = '__all__'
 
-class StagingWaterLineSerializer(serializers.ModelSerializer):
+class StagingWaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingWaterLine
         fields = '__all__'
 
-class StagingWaterNodeSerializer(serializers.ModelSerializer):
+class StagingWaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingWaterNode
         fields = '__all__'
 
-class StagingSewerLineSerializer(serializers.ModelSerializer):
+class StagingSewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingSewerLine
         fields = '__all__'
 
-class StagingManholeSerializer(serializers.ModelSerializer):
+class StagingManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingManhole
         fields = '__all__'
 
-class StagingSewerJunctionSerializer(serializers.ModelSerializer):
+class StagingSewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingSewerJunction
         fields = '__all__'
 
-class StagingElectricalLineSerializer(serializers.ModelSerializer):
+class StagingElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingElectricalLine
         fields = '__all__'
 
-class StagingElectricalNodeSerializer(serializers.ModelSerializer):
+class StagingElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingElectricalNode
         fields = '__all__'
 
-class StagingFiberLineSerializer(serializers.ModelSerializer):
+class StagingFiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingFiberLine
         fields = '__all__'
 
-class StagingFiberNodeSerializer(serializers.ModelSerializer):
+class StagingFiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingFiberNode
         fields = '__all__'
