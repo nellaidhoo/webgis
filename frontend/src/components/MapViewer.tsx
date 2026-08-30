@@ -5,11 +5,12 @@ import L from 'leaflet';
 import { 
   Map as MapIcon, Layers, Search, Shield, User, LogIn, LogOut, CheckCircle, 
   X, Edit, Trash2, Save, Plus, ArrowRight, Activity, FileText, Database, AlertCircle,
-  Ruler, Eraser, CheckSquare
+  Ruler, Eraser, CheckSquare, Download
 } from 'lucide-react';
 import SearchBar from './SearchBar';
 import AdminPanel from './AdminPanel';
 import ApprovalDashboard from './ApprovalDashboard';
+import ExportModal from './ExportModal';
 import { useToast } from './ToastProvider';
 
 // Helper to fix Leaflet marker icons in Next.js
@@ -48,6 +49,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   });
   const [showLogin, setShowLogin] = useState<boolean>(false);
   const [showApprovals, setShowApprovals] = useState<boolean>(false);
+  const [showExport, setShowExport] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'layers' | 'metadata'>('layers');
   const [featureTab, setFeatureTab] = useState<'details' | 'lineage' | 'history'>('details');
   const [zoomLevel, setZoomLevel] = useState<number>(15);
@@ -475,6 +477,15 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     return assetLayers.includes(layerName) ? `assets/${layerName}` : layerName;
   };
 
+  // Current viewport bounds as "min_lon,min_lat,max_lon,max_lat" for the export bbox filter
+  const getMapBounds = (): string | undefined => {
+    const map = mapRef.current;
+    if (!map) return undefined;
+    const bounds = map.getBounds();
+    if (!bounds) return undefined;
+    return `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+  };
+
   // Styling Helpers
   const roadStyle = (feature: any) => ({
     color: feature.properties.surface_type === 'Asphalt' ? '#f97316' : '#eab308',
@@ -866,6 +877,16 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
           >
             <Ruler className="w-3.5 h-3.5" />
             <span>{measureMode ? 'Measuring…' : 'Measure'}</span>
+          </button>
+
+          {/* Export Tool */}
+          <button 
+            onClick={() => setShowExport(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/35 hover:border-emerald-500/50 shadow-md text-xs font-medium text-emerald-400 cursor-pointer transition-all"
+            title="Export visible GIS data"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export</span>
           </button>
 
           {/* Login Button */}
@@ -1306,6 +1327,15 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
           onRefreshData={fetchData}
         />
       )}
+
+      {/* 7. MODAL POPUPS: Data Export */}
+      <ExportModal
+        apiBaseUrl={apiBaseUrl}
+        isOpen={showExport}
+        onClose={() => setShowExport(false)}
+        layer="all"
+        bbox={showExport ? getMapBounds() : undefined}
+      />
 
     </div>
   );

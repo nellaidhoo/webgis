@@ -33,3 +33,6 @@ pgtest/
 gisdeps/
 tiles/
 *.log
+
+# opencode local tooling config
+.opencode/

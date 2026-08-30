@@ -4,9 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { useToast } from './ToastProvider';
 import UploadWizard from './UploadWizard';
+import ExportModal from './ExportModal';
 import { 
   X, Database, CheckCircle2, AlertTriangle, Play, RefreshCw, 
-  Trash2, FileCode, Check, AlertOctagon, Terminal, Eye, HelpCircle, Image as ImageIcon 
+  Trash2, FileCode, Check, AlertOctagon, Terminal, Eye, HelpCircle, Image as ImageIcon, Download 
 } from 'lucide-react';
 
 interface ApprovalDashboardProps {
@@ -25,6 +26,9 @@ export default function ApprovalDashboard({
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'STAGED' | 'PROCESSING' | 'APPROVED' | 'ERROR' | 'REJECTED'>('ALL');
   const [filterType, setFilterType] = useState<'ALL' | 'SURVEY' | 'IMAGERY'>('ALL');
+
+  // Data export modal state (production data)
+  const [showExport, setShowExport] = useState(false);
   
   // Active logs viewer states
   const [selectedSessionLog, setSelectedSessionLog] = useState<any>(null);
@@ -473,6 +477,16 @@ export default function ApprovalDashboard({
                           </button>
                         )}
 
+                        {/* Export Production Data */}
+                        <button 
+                          onClick={() => setShowExport(true)}
+                          className="px-2.5 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-emerald-500/20 transition-colors"
+                          title="Export approved production data"
+                        >
+                          <Download className="w-3 h-3 text-emerald-400" />
+                          <span>Export</span>
+                        </button>
+
                         {isStaged && ['Super Admin'].includes(role) && (
                           <div className="flex gap-1.5">
                             <button
@@ -639,6 +653,14 @@ export default function ApprovalDashboard({
           </div>
         </div>
       )}
+
+      {/* Export Production Data Modal */}
+      <ExportModal
+        apiBaseUrl={apiBaseUrl}
+        isOpen={showExport}
+        onClose={() => setShowExport(false)}
+        layer="all"
+      />
 
     </div>
   );
