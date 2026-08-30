@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { useToast } from './ToastProvider';
+import UploadWizard from './UploadWizard';
 import { 
-  X, Database, Upload, CheckCircle2, AlertTriangle, Play, RefreshCw, 
+  X, Database, CheckCircle2, AlertTriangle, Play, RefreshCw, 
   Trash2, FileCode, Check, AlertOctagon, Terminal, Eye, HelpCircle, Image as ImageIcon 
 } from 'lucide-react';
 
@@ -22,13 +23,9 @@ export default function ApprovalDashboard({
   const { toast, confirm } = useToast();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'STAGED' | 'PROCESSING' | 'APPROVED' | 'ERROR' | 'REJECTED'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'SURVEY' | 'IMAGERY'>('ALL');
   
-  // Upload States
-  const [file, setFile] = useState<File | null>(null);
-  const [notes, setNotes] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
   // Active logs viewer states
   const [selectedSessionLog, setSelectedSessionLog] = useState<any>(null);
 
@@ -36,8 +33,11 @@ export default function ApprovalDashboard({
   const [previewSession, setPreviewSession] = useState<any | null>(null);
   const [previewData, setPreviewData] = useState<any | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewVisibleLayers, setPreviewVisibleLayers] = useState<Record<string, boolean>>({});
+  const [previewSelectedAttrs, setPreviewSelectedAttrs] = useState<{ layer: string; attrs: any } | null>(null);
   const previewMapContainerRef = useRef<HTMLDivElement>(null);
   const previewMapRef = useRef<L.Map | null>(null);
+  const previewLayerRefs = useRef<Record<string, L.LayerGroup<any> | null>>({});
 
   useEffect(() => {
     fetchSessions();
@@ -60,51 +60,19 @@ export default function ApprovalDashboard({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setUploadError(null);
-    }
-  };
-
-  const handleUploadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
-
-    setUploading(true);
-    setUploadError(null);
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('notes', notes);
-
-    try {
-      // Route to the FastAPI Import Service.
-      // In production: nginx maps /api/import/ -> 127.0.0.1:8001, stripping the
-      // prefix, so uvicorn sees /import/. In local dev the import service runs
-      // directly on port 8001, so point there explicitly.
-      const importBaseUrl = process.env.NEXT_PUBLIC_IMPORT_URL || apiBaseUrl.replace('/api', '/api/import');
-      const res = await fetch(`${importBaseUrl}/import/`, {
-        method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        body: formData
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: "Upload failed." }));
-        throw new Error(errData.detail || `Upload failed with status ${res.status}`);
-      }
-
-      toast("Ingestion initiated! The file is processing in the Celery background queue.", 'success');
-      setFile(null);
-      setNotes('');
-      fetchSessions();
-    } catch (err: any) {
-      setUploadError(err.message || "Failed to upload drawing package.");
-    } finally {
-      setUploading(false);
-    }
-  };
+  // Group order for the session list (inbox-first)
+  const STATUS_GROUP_ORDER: string[] = ['PROCESSING', 'STAGED', 'COMPLETED', 'ERROR', 'APPROVED', 'REJECTED', 'UPLOADED', 'PENDING'];
+  const filteredSessions = sessions.filter((s) => {
+    if (filterStatus !== 'ALL' && s.status !== filterStatus) return false;
+    if (filterType !== 'ALL' && s.session_type !== filterType) return false;
+    return true;
+  });
+  const groupedSessions = STATUS_GROUP_ORDER
+    .map((st) => ({
+      status: st,
+      items: filteredSessions.filter((s) => s.status === st),
+    }))
+    .filter((g) => g.items.length > 0);
 
   const handleApproveMerge = async (sessionId: string) => {
     const ok = await confirm("Are you sure you want to merge this session into production? Geometries will be upserted transactionally.");
@@ -202,6 +170,24 @@ export default function ApprovalDashboard({
   const closePreview = () => {
     setPreviewSession(null);
     setPreviewData(null);
+    setPreviewVisibleLayers({});
+    setPreviewSelectedAttrs(null);
+    previewLayerRefs.current = {};
+  };
+
+  const togglePreviewLayer = (layerName: string) => {
+    setPreviewVisibleLayers((prev) => {
+      const next = { ...prev, [layerName]: !prev[layerName] };
+      const group = previewLayerRefs.current[layerName];
+      if (group && previewMapRef.current) {
+        if (next[layerName]) {
+          group.addTo(previewMapRef.current);
+        } else {
+          previewMapRef.current.removeLayer(group);
+        }
+      }
+      return next;
+    });
   };
 
   // Style mapping for the staged preview layers (mirrors production map palette)
@@ -259,11 +245,13 @@ export default function ApprovalDashboard({
       map.setView([3.943, 73.489], 16);
     }
 
-    // Survey session: draw staged draft features
+    // Survey session: draw staged draft features (per-layer groups for toggling)
     if (previewData && previewSession.session_type === 'SURVEY') {
+      const layersInSession: string[] = [];
       Object.keys(previewData).forEach(layerName => {
         const features = previewData[layerName];
         if (!Array.isArray(features) || features.length === 0) return;
+        layersInSession.push(layerName);
 
         const geojsonFeatures = features
           .filter((f: any) => f && f.geometry)
@@ -275,13 +263,23 @@ export default function ApprovalDashboard({
 
         if (geojsonFeatures.length === 0) return;
 
-        L.geoJSON(geojsonFeatures, {
+        const group = L.layerGroup();
+        const geo = L.geoJSON(geojsonFeatures, {
           style: previewStyleFor(layerName),
           pointToLayer: (feature, latlng) => {
             const style: any = previewStyleFor(layerName);
             return L.circleMarker(latlng, style);
+          },
+          onEachFeature: (feature, layer) => {
+            layer.on('click', () => {
+              const { geometry: _g, ...attrs } = feature.properties || {};
+              setPreviewSelectedAttrs({ layer: layerName, attrs });
+            });
           }
-        }).addTo(map);
+        });
+        geo.addTo(group);
+        group.addTo(map);
+        previewLayerRefs.current[layerName] = group;
 
         geojsonFeatures.forEach((f: any) => {
           const tempLayer = L.geoJSON(f.geometry);
@@ -289,6 +287,7 @@ export default function ApprovalDashboard({
         });
       });
 
+      setPreviewVisibleLayers(Object.fromEntries(layersInSession.map((l) => [l, true])));
       if (bounds.isValid()) {
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
       }
@@ -325,53 +324,12 @@ export default function ApprovalDashboard({
         {/* Body Split */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden divide-y md:divide-y-0 md:divide-x divide-white/10">
           
-          {/* Left Panel: Upload Form (Only for Section/Super Admin) */}
+          {/* Left Panel: Upload Wizard (Only for Section/Super Admin) */}
           {['Section Admin', 'Super Admin'].includes(role) ? (
-            <form onSubmit={handleUploadSubmit} className="w-full md:w-80 p-5 space-y-4 shrink-0 overflow-y-auto">
+            <div className="w-full md:w-80 p-5 space-y-4 shrink-0 overflow-y-auto">
               <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Ingest CAD Package</h3>
-              
-              {uploadError && (
-                <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
-                  {uploadError}
-                </div>
-              )}
-
-              {/* Drag/drop input file */}
-              <div className="border border-dashed border-white/10 hover:border-sky-400/50 rounded-xl p-6 text-center transition-all bg-slate-950/40 relative cursor-pointer">
-                <input 
-                  type="file" 
-                  accept=".dxf,.tif,.tiff" 
-                  onChange={handleFileChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                />
-                <Upload className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-                <div className="text-xs font-semibold text-slate-200">
-                  {file ? file.name : "Select DXF Drawing or GeoTIFF"}
-                </div>
-                <p className="text-[9px] text-slate-500 mt-1">DXF CAD or .tif/.tiff orthophoto up to 100MB</p>
-              </div>
-
-              {/* Notes field */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Upload Notes</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Describe this survey update batch..."
-                  rows={3}
-                  className="w-full p-2.5 bg-slate-950 border border-white/10 focus:border-sky-400 focus:outline-none rounded-lg text-xs text-slate-200 resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!file || uploading}
-                className="w-full py-2.5 bg-sky-500 hover:bg-sky-600 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-lg"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>{uploading ? "Ingesting..." : "Ingest File"}</span>
-              </button>
-            </form>
+              <UploadWizard apiBaseUrl={apiBaseUrl} token={token} onUploaded={fetchSessions} />
+            </div>
           ) : (
             <div className="w-full md:w-80 p-5 shrink-0 text-center flex flex-col justify-center items-center text-slate-500 text-xs gap-2">
               <AlertTriangle className="w-6 h-6 text-amber-500" />
@@ -383,22 +341,62 @@ export default function ApprovalDashboard({
           <div className="flex-1 flex flex-col overflow-hidden">
             
             {/* Header / Table Toolbar */}
-            <div className="p-3 border-b border-white/10 bg-slate-900/20 flex items-center justify-between">
-              <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Survey Sessions Database</span>
-              <button 
-                onClick={fetchSessions}
-                disabled={loading}
-                className="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white cursor-pointer"
-                title="Refresh Records"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              </button>
+            <div className="p-3 border-b border-white/10 bg-slate-900/20 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Survey Sessions Database</span>
+                <button 
+                  onClick={fetchSessions}
+                  disabled={loading}
+                  className="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white cursor-pointer"
+                  title="Refresh Records"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as any)}
+                  className="px-2 py-1 rounded bg-slate-950 border border-white/10 text-[10px] text-slate-300 focus:border-sky-400 focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="PROCESSING">Processing</option>
+                  <option value="STAGED">Staged</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="ERROR">Error</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as any)}
+                  className="px-2 py-1 rounded bg-slate-950 border border-white/10 text-[10px] text-slate-300 focus:border-sky-400 focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">All Types</option>
+                  <option value="SURVEY">Survey DXF</option>
+                  <option value="IMAGERY">Orthophoto</option>
+                </select>
+                <span className="ml-auto text-[9px] text-slate-500">{filteredSessions.length} shown</span>
+              </div>
             </div>
 
             {/* List Content */}
-            <div className="flex-1 overflow-y-auto divide-y divide-white/5">
-              {sessions.length > 0 ? (
-                sessions.map((session) => {
+            <div className="flex-1 overflow-y-auto">
+              {filteredSessions.length > 0 ? (
+                groupedSessions.map((group) => (
+                  <div key={group.status} className="mb-2">
+                    {/* Group header */}
+                    <div className="px-4 py-1.5 flex items-center gap-2 sticky top-0 bg-slate-950/90 backdrop-blur z-10">
+                      <span className={`text-[9px] font-bold tracking-wider uppercase ${group.status === 'ERROR' || group.status === 'REJECTED' ? 'text-rose-400' : group.status === 'APPROVED' ? 'text-emerald-400' : group.status === 'PROCESSING' ? 'text-sky-400' : 'text-amber-400'}`}>
+                        {group.status}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-white/5 text-[8px] text-slate-400">{group.items.length}</span>
+                      <div className="flex-1 h-px bg-white/5" />
+                    </div>
+                    <div className="divide-y divide-white/5">
+                {group.items.map((session) => {
                   const isStaged = ['STAGED', 'COMPLETED'].includes(session.status);
                   const isProcessing = session.status === 'PROCESSING';
                   const isSuccess = session.status === 'APPROVED';
@@ -498,11 +496,14 @@ export default function ApprovalDashboard({
                       </div>
                     </div>
                   );
-                })
+                })}
+                    </div>
+                  </div>
+                ))
               ) : (
                 <div className="text-center p-12 text-slate-500 text-xs">
                   <Database className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                  <div>No survey import history records found.</div>
+                  <div>No survey import records match the current filters.</div>
                   <p className="text-[10px] text-slate-600 mt-1">Staged surveys will appear here for review.</p>
                 </div>
               )}
@@ -559,16 +560,81 @@ export default function ApprovalDashboard({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 relative bg-[#080c18]">
-              <div ref={previewMapContainerRef} className="absolute inset-0 z-0" />
-              {previewLoading && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
-                    <span>Loading staged geometries...</span>
+            <div className="flex-1 flex overflow-hidden">
+              {/* Map area */}
+              <div className="flex-1 relative bg-[#080c18]">
+                <div ref={previewMapContainerRef} className="absolute inset-0 z-0" />
+                {previewLoading && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 text-xs text-slate-300">
+                      <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+                      <span>Loading staged geometries...</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+
+              {/* Right panel: layer toggles + attribute inspector */}
+              <div className="w-64 shrink-0 border-l border-white/10 bg-slate-900/30 overflow-y-auto p-3 space-y-4">
+                {previewSession.session_type === 'SURVEY' ? (
+                  <>
+                    <div>
+                      <div className="text-[9px] font-bold tracking-wider text-slate-500 uppercase mb-2">Layers</div>
+                      {Object.keys(previewVisibleLayers).length === 0 && (
+                        <p className="text-[10px] text-slate-600">No staged layers available.</p>
+                      )}
+                      <div className="space-y-1.5">
+                        {Object.entries(previewVisibleLayers).map(([layer, visible]) => {
+                          const count = Array.isArray(previewData?.[layer]) ? previewData[layer].length : 0;
+                          const sw = previewStyleFor(layer);
+                          const color: any = sw.fillColor || sw.color || '#94a3b8';
+                          return (
+                            <label key={layer} className="flex items-center gap-2 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                checked={visible}
+                                onChange={() => togglePreviewLayer(layer)}
+                                className="accent-sky-500 cursor-pointer"
+                              />
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                              <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white capitalize truncate">{layer.replace(/_/g, ' ')}</span>
+                              <span className="ml-auto text-[9px] text-slate-500 font-mono">{count}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[9px] font-bold tracking-wider text-slate-500 uppercase mb-2">Inspected Feature</div>
+                      {previewSelectedAttrs ? (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-semibold text-sky-400 capitalize mb-1.5">
+                            {previewSelectedAttrs.layer.replace(/_/g, ' ')}
+                          </div>
+                          <div className="rounded-lg bg-slate-950/60 border border-white/5 overflow-hidden">
+                            {Object.entries(previewSelectedAttrs.attrs)
+                              .filter(([k]) => !['geometry', 'id', 'session_id'].includes(k))
+                              .slice(0, 20)
+                              .map(([k, v]) => (
+                                <div key={k} className="flex justify-between gap-2 px-2 py-1 border-b border-white/5 last:border-0">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wide whitespace-nowrap">{k.replace(/_/g, ' ')}</span>
+                                  <span className="text-[10px] text-slate-200 text-right break-all">{String(v) || '—'}</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-600">Click any feature on the map to inspect its staged attributes.</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    This is an orthophoto session. The generated XYZ tile layer is overlaid on the basemap at zoom 15&ndash;21.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

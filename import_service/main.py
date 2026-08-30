@@ -161,6 +161,115 @@ def verify_token(authorization):
     except Exception:
         return None
 
+@app.post("/import/precheck/")
+async def precheck_survey(
+    file: UploadFile = File(...),
+    authorization: str = Header(None)
+):
+    """
+    Pre-upload validation that does NOT write to disk or DB.
+    Reads the file in memory, checks extension/size, computes MD5 and checks
+    for a duplicate against previously uploaded files, and (best-effort) sniffs
+    DXF layers so the UI can warn the user before committing.
+    """
+    # Optional auth — precheck is safe to call before login completes, but we
+    # still check token validity when provided so garbage uploads are rejected.
+    filename = (file.filename or "").lower()
+    file_ext = os.path.splitext(filename)[1]
+
+    errors = []
+    warnings = []
+
+    # 1. Extension validation
+    if file_ext not in (".dxf", ".tif", ".tiff"):
+        errors.append(
+            "Unsupported file format. Provide a DXF drawing (.dxf) or GeoTIFF (.tif/.tiff) orthophoto."
+        )
+    else:
+        session_type = "SURVEY" if file_ext == ".dxf" else "IMAGERY"
+
+    # 2. Read content + size validation
+    file_content = await file.read()
+    file_size = len(file_content)
+    max_bytes = int(os.getenv("MAX_UPLOAD_MB", "100")) * 1024 * 1024
+    if file_size == 0:
+        errors.append("The selected file is empty. Choose a valid survey package.")
+    elif file_size > max_bytes:
+        errors.append(
+            f"File is {file_size / 1024 / 1024:.1f} MB, exceeding the {max_bytes // (1024 * 1024)} MB limit."
+        )
+
+    # 3. Compute MD5 and check for a duplicate
+    md5_hash = compute_md5(file_content)
+    is_duplicate = False
+    duplicate_session_id = None
+    duplicate_file_name = None
+    if not errors:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT session_id, file_name FROM gis_app_uploadedfile WHERE md5_checksum = %s LIMIT 1",
+                    (md5_hash,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    is_duplicate = True
+                    duplicate_session_id = row[0]
+                    duplicate_file_name = row[1]
+                    warnings.append(
+                        f"This file appears to be a duplicate of {row[1]} (session {row[0]}). Uploading it again will create a duplicate session."
+                    )
+            finally:
+                cursor.close()
+                conn.close()
+        except Exception as e:
+            # Duplicate check must never block upload validation
+            print(f"⚠️ Duplicate check failed during precheck: {e}")
+
+    # 4. Best-effort DXF layer/feature sniff (never blocks upload)
+    predicted_layers = []
+    estimated_feature_count = 0
+    if file_ext == ".dxf":
+        try:
+            import ezdxf
+            import io as _io
+            # Decode the raw bytes to text (DXF is text-oriented). Try a few
+            # common encodings rather than trusting the file extension.
+            for _enc in ("utf-8", "cp1252", "latin-1"):
+                try:
+                    text = file_content.decode(_enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            doc = ezdxf.read(_io.StringIO(text))
+            layer_names = {e.dxf.layer for e in doc.modelspace() if e.dxf.layer}
+            predicted_layers = sorted(layer_names)[:50]
+            estimated_feature_count = len(list(doc.modelspace()))
+        except Exception as e:
+            print(f"⚠️ DXF sniff failed during precheck (best-effort): {e}")
+            # Refuse to hard-fail validation on sniffing errors
+            if "File is not a DXF document" in str(e) or "Unknown DXF version" in str(e):
+                errors.append("File extension is .dxf but the content does not parse as a valid DXF drawing.")
+            else:
+                warnings.append("Could not fully inspect DXF layers during pre-validation.")
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "is_duplicate": is_duplicate,
+        "duplicate_session_id": duplicate_session_id,
+        "duplicate_file_name": duplicate_file_name,
+        "session_type": None if errors else ("SURVEY" if file_ext == ".dxf" else "IMAGERY"),
+        "md5_checksum": md5_hash,
+        "file_size_bytes": file_size,
+        "file_extension": file_ext,
+        "estimated_feature_count": estimated_feature_count,
+        "predicted_layers": predicted_layers,
+    }
+
 @app.post("/import/")
 async def upload_survey(
     file: UploadFile = File(...),

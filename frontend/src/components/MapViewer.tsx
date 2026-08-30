@@ -49,6 +49,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   const [showLogin, setShowLogin] = useState<boolean>(false);
   const [showApprovals, setShowApprovals] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'layers' | 'metadata'>('layers');
+  const [featureTab, setFeatureTab] = useState<'details' | 'lineage' | 'history'>('details');
   const [zoomLevel, setZoomLevel] = useState<number>(15);
 
   // Latest published orthophoto tile package URL (per imagery session)
@@ -1098,9 +1099,24 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
             </button>
           </div>
 
+          {/* Tab bar */}
+          <div className="flex border-b border-white/10 bg-slate-900/30 shrink-0">
+            {(['details', 'lineage', 'history'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setFeatureTab(tab)}
+                className={`flex-1 py-2 text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${featureTab === tab ? 'text-sky-400 border-b-2 border-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                {tab === 'details' ? 'Details' : tab === 'lineage' ? 'Lineage' : 'History'}
+              </button>
+            ))}
+          </div>
+
           {/* Scrollable details */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             
+            {/* ===== DETAILS TAB ===== */}
+            {featureTab === 'details' && (<>
             {/* Core attributes list */}
             <div className="space-y-2">
               <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Attributes</h3>
@@ -1146,16 +1162,81 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
               </div>
             )}
 
-            {/* Data Lineage Tracking section */}
-            <div className="space-y-2">
-              <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Data Lineage</h3>
-              <div className="bg-slate-950/40 border border-white/5 rounded-lg p-3 space-y-2 text-[10px] font-mono text-slate-400">
-                <div className="flex justify-between"><span>Survey Date:</span> <span className="text-slate-300">{selectedFeature.data.survey_date || 'Initial Upload'}</span></div>
-                <div className="flex justify-between"><span>Source File:</span> <span className="text-slate-300 truncate max-w-[120px]">{selectedFeature.data.source_file || 'System Seed'}</span></div>
-                <div className="flex justify-between"><span>Accuracy Limit:</span> <span className="text-emerald-400">{selectedFeature.data.accuracy ? `${selectedFeature.data.accuracy} m` : 'Unspecified'}</span></div>
-                <div className="flex justify-between"><span>Status:</span> <span className="text-sky-400 font-bold">{selectedFeature.data.status || 'ACTIVE'}</span></div>
+            </>)}
+
+            {/* ===== LINEAGE TAB ===== */}
+            {featureTab === 'lineage' && (
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Data Lineage</h3>
+                <div className="bg-slate-950/40 border border-white/5 rounded-lg p-3 space-y-2 text-[10px] font-mono text-slate-400">
+                  <div className="flex justify-between"><span>Survey Date:</span> <span className="text-slate-300">{selectedFeature.data.survey_date || 'Initial Upload'}</span></div>
+                  <div className="flex justify-between"><span>Source File:</span> <span className="text-slate-300 truncate max-w-[120px]">{selectedFeature.data.source_file || 'System Seed'}</span></div>
+                  <div className="flex justify-between"><span>Accuracy Limit:</span> <span className="text-emerald-400">{selectedFeature.data.accuracy ? `${selectedFeature.data.accuracy} m` : 'Unspecified'}</span></div>
+                  <div className="flex justify-between"><span>Status:</span> <span className="text-sky-400 font-bold">{selectedFeature.data.status || 'ACTIVE'}</span></div>
+                  <div className="flex justify-between"><span>Created By:</span> <span className="text-slate-300">{selectedFeature.data.created_by_name || selectedFeature.data.created_by || '—'}</span></div>
+                  <div className="flex justify-between"><span>Last Updated:</span> <span className="text-slate-300">{selectedFeature.data.updated_at ? new Date(selectedFeature.data.updated_at).toLocaleString() : '—'}</span></div>
+                </div>
+                <div className="bg-slate-950/40 border border-sky-500/10 rounded-lg p-3">
+                  <h4 className="text-[9px] font-bold text-sky-400 uppercase tracking-wider mb-1.5">Provenance</h4>
+                  <div className="flex items-center gap-2 font-mono text-[9px] text-slate-500">
+                    <span>Survey Batch</span>
+                    <span className="text-slate-600">→</span>
+                    <span>Staged</span>
+                    <span className="text-slate-600">→</span>
+                    <span>Merged</span>
+                    <span className="text-slate-600">→</span>
+                    <span className="text-emerald-400">Active</span>
+                  </div>
+                  <p className="text-[9px] text-slate-600 mt-2 leading-relaxed">
+                    This feature is an active production record derived from the survey batch linked above. Its source file and accuracy limit document the field-survey provenance.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* ===== HISTORY TAB ===== */}
+            {featureTab === 'history' && (
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Record History</h3>
+                <div className="relative pl-4 border-l border-white/10 space-y-4">
+                  {[
+                    {
+                      icon: 'REGISTERED',
+                      title: 'Asset Registered',
+                      detail: `Survey / production seed for ${selectedFeature.data.source_file || 'initial system dataset'}, recorded against asset ${selectedFeature.data.asset_code}.`,
+                      when: selectedFeature.data.created_at ? new Date(selectedFeature.data.created_at).toLocaleString() : 'Not recorded',
+                      tone: 'sky'
+                    },
+                    {
+                      icon: 'SURVEYED',
+                      title: 'Field Survey Dated',
+                      detail: selectedFeature.data.survey_date
+                        ? `Survey observation captured on ${new Date(selectedFeature.data.survey_date).toLocaleDateString()} with ${selectedFeature.data.accuracy ? `a documented accuracy of ${selectedFeature.data.accuracy} m` : 'no stated accuracy limit'}.`
+                        : 'Survey date not recorded for this feature.',
+                      when: selectedFeature.data.survey_date || 'Not recorded',
+                      tone: 'amber'
+                    },
+                    {
+                      icon: 'UPDATED',
+                      title: 'Record Last Modified',
+                      detail: `Current status is ${selectedFeature.data.status || 'ACTIVE'}; the record was last touched as shown.`,
+                      when: selectedFeature.data.updated_at ? new Date(selectedFeature.data.updated_at).toLocaleString() : 'Not recorded',
+                      tone: 'emerald'
+                    }
+                  ].map((entry, i) => (
+                    <div key={i} className="relative">
+                      <span className={`absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full ${entry.tone === 'sky' ? 'bg-sky-400' : entry.tone === 'amber' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                      <div className="text-[10px] font-bold text-slate-200">{entry.title}</div>
+                      <div className="text-[10px] text-slate-400 leading-relaxed mt-0.5">{entry.detail}</div>
+                      <div className="text-[9px] text-slate-600 font-mono mt-1">{entry.when}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[9px] text-slate-600 italic pt-1">
+                  Full audit history (approvals, rejections, merges) is tracked at the survey-session level in the Ingestion pipeline.
+                </p>
+              </div>
+            )}
 
           </div>
 

@@ -42,6 +42,15 @@ class GeometrySerializerField(serializers.Field):
         except Exception as e:
             raise serializers.ValidationError(f"Invalid GeoJSON geometry: {e}")
 
+# Mixin adding a human-readable "created by" display name to any feature serializer
+# (field must be declared in each subclass body for DRF's metaclass to pick it up)
+class CreatedByNameMixin:
+    def get_created_by_name(self, obj):
+        u = obj.created_by
+        if not u:
+            return None
+        return (u.get_full_name() or u.username) if u else None
+
 # User Serializer
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -49,14 +58,16 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
 
 # --- CORE LAYER SERIALIZERS ---
-class RoadSerializer(serializers.ModelSerializer):
+class RoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = Road
         fields = '__all__'
 
-class BuildingSerializer(serializers.ModelSerializer):
+class BuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     addresses_count = serializers.IntegerField(source='addresses.count', read_only=True)
     
     class Meta:
@@ -71,14 +82,16 @@ class AddressSerializer(serializers.ModelSerializer):
         model = Address
         fields = '__all__'
 
-class LandUseSerializer(serializers.ModelSerializer):
+class LandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = LandUse
         fields = '__all__'
 
-class FacilitySerializer(serializers.ModelSerializer):
+class FacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
 
     class Meta:
@@ -89,62 +102,72 @@ class FacilitySerializer(serializers.ModelSerializer):
         return obj.category.name if obj.category else obj.category_old
 
 # --- ASSETS & UTILITIES SERIALIZERS ---
-class StreetLightSerializer(serializers.ModelSerializer):
+class StreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StreetLight
         fields = '__all__'
 
-class WaterLineSerializer(serializers.ModelSerializer):
+class WaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = WaterLine
         fields = '__all__'
 
-class WaterNodeSerializer(serializers.ModelSerializer):
+class WaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = WaterNode
         fields = '__all__'
 
-class SewerLineSerializer(serializers.ModelSerializer):
+class SewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = SewerLine
         fields = '__all__'
 
-class ManholeSerializer(serializers.ModelSerializer):
+class ManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = Manhole
         fields = '__all__'
 
-class SewerJunctionSerializer(serializers.ModelSerializer):
+class SewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = SewerJunction
         fields = '__all__'
 
-class ElectricalLineSerializer(serializers.ModelSerializer):
+class ElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = ElectricalLine
         fields = '__all__'
 
-class ElectricalNodeSerializer(serializers.ModelSerializer):
+class ElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = ElectricalNode
         fields = '__all__'
 
-class FiberLineSerializer(serializers.ModelSerializer):
+class FiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = FiberLine
         fields = '__all__'
 
-class FiberNodeSerializer(serializers.ModelSerializer):
+class FiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = FiberNode
         fields = '__all__'
