@@ -14,6 +14,7 @@ production server (`192.168.150.33`) and local dev workstation.
 | Sprint 2 | User registration, approval workflow, rate limiting, admin bulk actions | ✅ Complete |
 | Sprint 3 | Survey ingestion: upload wizard, precheck, session grouping, staged preview, lineage/history | ✅ Complete |
 | Sprint 4 | Data export (backend API + frontend UI) | ✅ Complete |
+| Sprint 5 | Security & data governance: layer visibility, export gating, public read-only portal, lineage | 🔄 Implemented (pending deploy) |
 
 ---
 
@@ -124,7 +125,70 @@ production server (`192.168.150.33`) and local dev workstation.
 
 ---
 
-## 6. Legacy / Base Features (pre-sprint, retained)
+## 6. Sprint 5 — Security & Data Governance
+
+Backend-enforced access control; **no reliance on frontend layer hiding.** Security is
+derived from a new `LayerRegistry` and applied uniformly across **REST viewsets,
+`/api/public/*`, search, vector tiles/MVT, and exports.**
+
+### 6.1 Layer Registry (`LayerRegistry` model + seed migration `0008`)
+Central registry of every GIS layer. Defaults:
+| Layer | Visibility | Exportable |
+|-------|-----------|------------|
+| roads, buildings, facilities, land_use | PUBLIC | ✅ yes |
+| street_lights | AUTHENTICATED | ❌ no |
+| water/sewer/electrical/fiber (lines+nodes) | COUNCIL | ❌ no |
+
+- `is_enabled`, `min_zoom/max_zoom`, `style_config` drive public portal rendering.
+- Unregistered/disabled layers are treated as fully **restricted by default** (defensive).
+
+### 6.2 `security.py` helpers + permissions
+- `user_has_layer_visibility(user, key)` / `can_export_layer(user, key)`.
+- Role helpers: `is_admin` / `is_section_admin` / `is_staff`.
+- DRF classes: `LayerVisibilityPermission`, `LayerWritePermission` (writes = Section Admin+),
+  `PublicOnly` (rejects every non-safe method).
+- `write_audit()` — generic `AuditLog` writer.
+
+### 6.3 Enforcement across all access paths
+- **Viewsets:** all 14 layer viewsets use `[LayerVisibilityPermission, LayerWritePermission]`
+  with a `layer_key`; fixed the pre-existing broken singular `permission_class` on Road/Building.
+  Anonymous can read/export only PUBLIC layers; utilities are 403/denied.
+- **SearchView:** each layer's results are filtered by the caller's visibility
+  (street_lights proximity only for authenticated; utilities never searched publicly).
+- **VectorTileView:** each tile layer maps to a registry key; restricted tiles (e.g.
+  `utilities`) return **403** to anonymous/low-clearance callers.
+- **ExportView:** enforces `can_export_layer` → restricted/utility exports return **403**;
+  writes `EXPORT_REQUESTED` / `EXPORT_DENIED` audit events.
+
+### 6.4 Public field-stripping serializers
+- `PublicRoad/Building/Facility/LandUseSerializer` expose **only** safe public fields
+  (no `created_by`, `accuracy`, `source_file`, `source_session`, internal audit metadata).
+
+### 6.5 Public read-only portal `/api/public/*`
+- `views_public.py` + `urls_public.py` (wired once at the project level, not duplicated
+  under the legacy include), all guarded by `PublicOnly`:
+  - `GET /api/public/layers/` — metadata for enabled layers visible to anonymous callers.
+  - `GET /api/public/search/` — public text + proximity search (public layers only).
+  - `GET /api/public/<layer>/` — roads / buildings / facilities / land_use feature lists,
+    with `?bbox=` and `?limit=` support.
+  - `GET /api/public/imagery/` — latest public drone orthomosaic metadata (read-only).
+- **Strictly read-only:** any POST/PUT/PATCH/DELETE is rejected.
+
+### 6.6 Lineage
+- `source_session` FK on `BaseGISModel` links every approved production record back to the
+  survey session it was merged from; `_merge_layer` now records it.
+
+### 6.7 Verification (S5)
+- `manage.py check` clean, `py_compile` clean, migrations applied locally.
+- Django-level tests confirmed: anonymous 403/denied on `water_lines`/`sewer_lines`/`street_lights`
+  viewsets and on `utilities` tiles and utility exports; public layers readable/exportable;
+  `/api/public/*` lists only the 4 PUBLIC layers and rejects mutations.
+- Harness gained S5 security checks (public layers = PUBLIC only, public POST denied,
+  restricted viewset/tile/export denied, public export still works).
+
+---
+
+## 7. Legacy / Base Features (pre-sprint, retained)
 
 - **Vector tile serving** (`/api/tiles/<layer>/<z>/<x>/<y>/`) for fast map rendering.
 - **Combined trigram + proximity search** (`/api/search/`).
@@ -135,7 +199,7 @@ production server (`192.168.150.33`) and local dev workstation.
 
 ---
 
-## 7. Verification & Tooling
+## 8. Verification & Tooling
 
 - **Harness e2e:** `webgis-stack/harness.py` — full lifecycle test (login → upload → parse → approve → verify production → export) currently **39/39 PASS**.
 - **Frontend:** `npx tsc --noEmit` clean; `npm run build` clean (local + server).
@@ -145,7 +209,7 @@ production server (`192.168.150.33`) and local dev workstation.
 
 ---
 
-## 8. Known Notes / Decisions
+## 9. Known Notes / Decisions
 
 - **Global DRF pagination is intentionally disabled** — MapViewer loads all features via `data.results || data`; pagination is scoped **only** to `SurveySessionViewSet`.
 - **`created_by_name` must be declared in the serializer class body** (not inherited via mixin) due to DRF metaclass behavior.
