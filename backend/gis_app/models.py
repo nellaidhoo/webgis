@@ -13,6 +13,9 @@ class BaseGISModel(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="%(class)s_created")
     survey_date = models.DateField(null=True, blank=True)
     source_file = models.CharField(max_length=255, blank=True)
+    # Lineage: link an approved production record back to the survey session it
+    # was merged from, so every asset is traceable to its authoritative source.
+    source_session = models.ForeignKey('SurveySession', on_delete=models.SET_NULL, null=True, blank=True, related_name="%(class)s_production")
     accuracy = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Accuracy in meters")
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -507,3 +510,61 @@ class UserRegistrationRequest(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Registration Request'
         verbose_name_plural = 'Registration Requests'
+
+
+# ==========================================
+# 7. LAYER REGISTRY (Backend layer visibility/classification)
+# ==========================================
+class LayerRegistry(models.Model):
+    """
+    Central registry of every GIS layer: its public/private classification,
+    visibility level, enablement, zoom range, style and export permission.
+
+    Backend-enforced security is derived from this registry rather than from
+    frontend layer hiding.
+    """
+    class Visibility(models.TextChoices):
+        PUBLIC = 'PUBLIC', 'Public'
+        AUTHENTICATED = 'AUTHENTICATED', 'Authenticated'
+        COUNCIL = 'COUNCIL', 'Council'
+        RESTRICTED = 'RESTRICTED', 'Restricted'
+
+    key = models.CharField(max_length=50, unique=True, help_text="Unique slug e.g. 'roads', 'water_lines'")
+    display_name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    geometry_type = models.CharField(max_length=20, blank=True, help_text="Point | LineString | Polygon")
+
+    visibility = models.CharField(
+        max_length=20, choices=Visibility.choices, default=Visibility.PUBLIC,
+        help_text="Minimum clearance required to read this layer",
+    )
+    is_public = models.BooleanField(
+        default=False,
+        help_text="Layer is exposed through the anonymous public GIS portal",
+    )
+    is_enabled = models.BooleanField(
+        default=True,
+        help_text="Layer is available for loading/rendering",
+    )
+    is_exportable = models.BooleanField(
+        default=False,
+        help_text="Layer data may be exported via the export API",
+    )
+
+    min_zoom = models.IntegerField(default=0)
+    max_zoom = models.IntegerField(default=22)
+    style_config = models.JSONField(default=dict, blank=True, help_text="Frontend style hints (color, weight, fill)")
+
+    # Maps this registry entry to the export LAYER_MAP key if exportable
+    export_layer_key = models.CharField(max_length=50, blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.display_name} ({self.key})"
+
+    class Meta:
+        ordering = ['key']
+        verbose_name = 'Layer Registry'
+        verbose_name_plural = 'Layer Registry'

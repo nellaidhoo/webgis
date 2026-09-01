@@ -41,6 +41,10 @@ from .serializers import (
     StagingElectricalNodeSerializer,     StagingFiberLineSerializer, StagingFiberNodeSerializer
 )
 from . import services
+from .security import (
+    LayerVisibilityPermission, LayerWritePermission, PublicOnly,
+    user_has_layer_visibility, can_export_layer, write_audit,
+)
 
 # Helper to check user roles
 def user_roles(user):
@@ -113,12 +117,14 @@ class CanUploadData(permissions.BasePermission):
 class RoadViewSet(viewsets.ModelViewSet):
     queryset = Road.objects.filter(status='ACTIVE')
     serializer_class = RoadSerializer
-    permission_class = [IsSectionAdminOrReadOnly]
+    layer_key = 'roads'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class BuildingViewSet(viewsets.ModelViewSet):
     queryset = Building.objects.filter(status='ACTIVE')
     serializer_class = BuildingSerializer
-    permission_class = [IsSectionAdminOrReadOnly]
+    layer_key = 'buildings'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
     @action(detail=True, methods=['get'])
     def addresses(self, request, pk=None):
@@ -135,63 +141,75 @@ class AddressViewSet(viewsets.ModelViewSet):
 class LandUseViewSet(viewsets.ModelViewSet):
     queryset = LandUse.objects.filter(status='ACTIVE')
     serializer_class = LandUseSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'land_use'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class FacilityViewSet(viewsets.ModelViewSet):
     queryset = Facility.objects.filter(status='ACTIVE')
     serializer_class = FacilitySerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'facilities'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 # --- ASSETS & UTILITY VIEWSETS ---
 class StreetLightViewSet(viewsets.ModelViewSet):
     queryset = StreetLight.objects.filter(status='ACTIVE')
     serializer_class = StreetLightSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'street_lights'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class WaterLineViewSet(viewsets.ModelViewSet):
     queryset = WaterLine.objects.filter(status='ACTIVE')
     serializer_class = WaterLineSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'water_lines'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class WaterNodeViewSet(viewsets.ModelViewSet):
     queryset = WaterNode.objects.filter(status='ACTIVE')
     serializer_class = WaterNodeSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'water_nodes'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class SewerLineViewSet(viewsets.ModelViewSet):
     queryset = SewerLine.objects.filter(status='ACTIVE')
     serializer_class = SewerLineSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'sewer_lines'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class ManholeViewSet(viewsets.ModelViewSet):
     queryset = Manhole.objects.filter(status='ACTIVE')
     serializer_class = ManholeSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'manholes'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class SewerJunctionViewSet(viewsets.ModelViewSet):
     queryset = SewerJunction.objects.filter(status='ACTIVE')
     serializer_class = SewerJunctionSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'sewer_junctions'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class ElectricalLineViewSet(viewsets.ModelViewSet):
     queryset = ElectricalLine.objects.filter(status='ACTIVE')
     serializer_class = ElectricalLineSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'electrical_lines'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class ElectricalNodeViewSet(viewsets.ModelViewSet):
     queryset = ElectricalNode.objects.filter(status='ACTIVE')
     serializer_class = ElectricalNodeSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'electrical_nodes'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class FiberLineViewSet(viewsets.ModelViewSet):
     queryset = FiberLine.objects.filter(status='ACTIVE')
     serializer_class = FiberLineSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'fiber_lines'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class FiberNodeViewSet(viewsets.ModelViewSet):
     queryset = FiberNode.objects.filter(status='ACTIVE')
     serializer_class = FiberNodeSerializer
-    permission_classes = [IsSectionAdminOrReadOnly]
+    layer_key = 'fiber_nodes'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 # --- SURVEY SESSION & REVIEW VIEWSET ---
 class SurveySessionViewSet(viewsets.ModelViewSet):
@@ -357,59 +375,67 @@ class SearchView(views.APIView):
 
         # 1. Text Similarity Search (Trigram Similarity)
         if query:
-            # Search Buildings
-            buildings = Building.objects.annotate(
-                similarity=TrigramSimilarity('house_name', query) + TrigramSimilarity('building_code', query)
-            ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
+            # Backend-enforced: only search layers the caller may read.
+            can_see_buildings = user_has_layer_visibility(request.user, 'buildings')
+            can_see_roads = user_has_layer_visibility(request.user, 'roads')
+            can_see_facilities = user_has_layer_visibility(request.user, 'facilities')
 
-            for b in buildings:
-                results['text_matches'].append({
-                    'type': 'building',
-                    'id': b.id,
-                    'asset_code': b.asset_code,
-                    'building_code': b.building_code,
-                    'house_name': b.house_name,
-                    'building_type': b.building_type,
-                    'similarity': float(b.similarity),
-                    'geometry': json.loads(b.geometry.transform(4326, clone=True).geojson)
-                })
+            # Search Buildings
+            if can_see_buildings:
+                buildings = Building.objects.annotate(
+                    similarity=TrigramSimilarity('house_name', query) + TrigramSimilarity('building_code', query)
+                ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
+
+                for b in buildings:
+                    results['text_matches'].append({
+                        'type': 'building',
+                        'id': b.id,
+                        'asset_code': b.asset_code,
+                        'building_code': b.building_code,
+                        'house_name': b.house_name,
+                        'building_type': b.building_type,
+                        'similarity': float(b.similarity),
+                        'geometry': json.loads(b.geometry.transform(4326, clone=True).geojson)
+                    })
 
             # Search Roads
-            roads = Road.objects.annotate(
-                similarity=TrigramSimilarity('road_name', query) + TrigramSimilarity('road_code', query)
-            ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
+            if can_see_roads:
+                roads = Road.objects.annotate(
+                    similarity=TrigramSimilarity('road_name', query) + TrigramSimilarity('road_code', query)
+                ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
 
-            for r in roads:
-                results['text_matches'].append({
-                    'type': 'road',
-                    'id': r.id,
-                    'asset_code': r.asset_code,
-                    'road_name': r.road_name,
-                    'road_code': r.road_code,
-                    'similarity': float(r.similarity),
-                    'geometry': json.loads(r.geometry.transform(4326, clone=True).geojson)
-                })
+                for r in roads:
+                    results['text_matches'].append({
+                        'type': 'road',
+                        'id': r.id,
+                        'asset_code': r.asset_code,
+                        'road_name': r.road_name,
+                        'road_code': r.road_code,
+                        'similarity': float(r.similarity),
+                        'geometry': json.loads(r.geometry.transform(4326, clone=True).geojson)
+                    })
 
             # Search Facilities (match name plus the category display text:
             # the FK's related name, falling back to the legacy char column)
-            facilities = Facility.objects.annotate(
-                similarity=TrigramSimilarity('name', query)
-                + TrigramSimilarity(
-                    Coalesce(F('category__name'), F('category_old'), output_field=CharField()),
-                    query,
-                )
-            ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
+            if can_see_facilities:
+                facilities = Facility.objects.annotate(
+                    similarity=TrigramSimilarity('name', query)
+                    + TrigramSimilarity(
+                        Coalesce(F('category__name'), F('category_old'), output_field=CharField()),
+                        query,
+                    )
+                ).filter(similarity__gt=0.1, status='ACTIVE').order_by('-similarity')[:10]
 
-            for f in facilities:
-                results['text_matches'].append({
-                    'type': 'facility',
-                    'id': f.id,
-                    'asset_code': f.asset_code,
-                    'name': f.name,
-                    'category': f.category.name if f.category else f.category_old,
-                    'similarity': float(f.similarity),
-                    'geometry': json.loads(f.geometry.transform(4326, clone=True).geojson)
-                })
+                for f in facilities:
+                    results['text_matches'].append({
+                        'type': 'facility',
+                        'id': f.id,
+                        'asset_code': f.asset_code,
+                        'name': f.name,
+                        'category': f.category.name if f.category else f.category_old,
+                        'similarity': float(f.similarity),
+                        'geometry': json.loads(f.geometry.transform(4326, clone=True).geojson)
+                    })
 
             # Sort combined text matches by similarity
             results['text_matches'].sort(key=lambda x: x['similarity'], reverse=True)
@@ -424,57 +450,60 @@ class SearchView(views.APIView):
                 radius_m = float(radius)
 
                 # Search Facilities within distance
-                facilities_near = Facility.objects.filter(
-                    geometry__dwithin=(user_point_32643, radius_m),
-                    status='ACTIVE'
-                ).annotate(
-                    distance=Distance('geometry', user_point_32643)
-                ).order_by('distance')[:15]
+                if user_has_layer_visibility(request.user, 'facilities'):
+                    facilities_near = Facility.objects.filter(
+                        geometry__dwithin=(user_point_32643, radius_m),
+                        status='ACTIVE'
+                    ).annotate(
+                        distance=Distance('geometry', user_point_32643)
+                    ).order_by('distance')[:15]
 
-                for f in facilities_near:
-                    results['proximity_matches'].append({
-                        'type': 'facility',
-                        'id': f.id,
-                        'name': f.name,
-                        'category': f.category.name if f.category else f.category_old,
-                        'distance_meters': round(f.distance.m, 2),
-                        'geometry': json.loads(f.geometry.transform(4326, clone=True).geojson)
-                    })
+                    for f in facilities_near:
+                        results['proximity_matches'].append({
+                            'type': 'facility',
+                            'id': f.id,
+                            'name': f.name,
+                            'category': f.category.name if f.category else f.category_old,
+                            'distance_meters': round(f.distance.m, 2),
+                            'geometry': json.loads(f.geometry.transform(4326, clone=True).geojson)
+                        })
 
-                # Search Street Lights within distance
-                lights_near = StreetLight.objects.filter(
-                    geometry__dwithin=(user_point_32643, radius_m),
-                    status='ACTIVE'
-                ).annotate(
-                    distance=Distance('geometry', user_point_32643)
-                ).order_by('distance')[:15]
+                # Search Street Lights within distance (AUTHENTICATED layer)
+                if user_has_layer_visibility(request.user, 'street_lights'):
+                    lights_near = StreetLight.objects.filter(
+                        geometry__dwithin=(user_point_32643, radius_m),
+                        status='ACTIVE'
+                    ).annotate(
+                        distance=Distance('geometry', user_point_32643)
+                    ).order_by('distance')[:15]
 
-                for l in lights_near:
-                    results['proximity_matches'].append({
-                        'type': 'street_light',
-                        'id': l.id,
-                        'light_type': l.light_type,
-                        'distance_meters': round(l.distance.m, 2),
-                        'geometry': json.loads(l.geometry.transform(4326, clone=True).geojson)
-                    })
+                    for l in lights_near:
+                        results['proximity_matches'].append({
+                            'type': 'street_light',
+                            'id': l.id,
+                            'light_type': l.light_type,
+                            'distance_meters': round(l.distance.m, 2),
+                            'geometry': json.loads(l.geometry.transform(4326, clone=True).geojson)
+                        })
 
                 # Search nearest building (find closest building polygon)
-                buildings_near = Building.objects.filter(
-                    geometry__dwithin=(user_point_32643, radius_m),
-                    status='ACTIVE'
-                ).annotate(
-                    distance=Distance('geometry', user_point_32643)
-                ).order_by('distance')[:5]
+                if user_has_layer_visibility(request.user, 'buildings'):
+                    buildings_near = Building.objects.filter(
+                        geometry__dwithin=(user_point_32643, radius_m),
+                        status='ACTIVE'
+                    ).annotate(
+                        distance=Distance('geometry', user_point_32643)
+                    ).order_by('distance')[:5]
 
-                for b in buildings_near:
-                    results['proximity_matches'].append({
-                        'type': 'building',
-                        'id': b.id,
-                        'building_code': b.building_code,
-                        'house_name': b.house_name,
-                        'distance_meters': round(b.distance.m, 2),
-                        'geometry': json.loads(b.geometry.transform(4326, clone=True).geojson)
-                    })
+                    for b in buildings_near:
+                        results['proximity_matches'].append({
+                            'type': 'building',
+                            'id': b.id,
+                            'building_code': b.building_code,
+                            'house_name': b.house_name,
+                            'distance_meters': round(b.distance.m, 2),
+                            'geometry': json.loads(b.geometry.transform(4326, clone=True).geojson)
+                        })
 
                 # Sort proximity matches by distance
                 results['proximity_matches'].sort(key=lambda x: x['distance_meters'])
@@ -659,15 +688,19 @@ class HealthCheckView(views.APIView):
 
 
 class VectorTileView(views.APIView):
-    """Vector tile endpoint serving Mapbox Vector Tiles (MVT) from PostGIS."""
+    """Vector tile endpoint serving Mapbox Vector Tiles (MVT) from PostGIS.
+
+    Backend-enforced visibility: each tile layer maps to a LayerRegistry key,
+    and restricted layers (e.g. utilities) require the caller's clearance.
+    """
     permission_classes = [permissions.AllowAny]
 
     VALID_LAYERS = {
-        'roads': 'mvt_roads',
-        'buildings': 'mvt_buildings',
-        'facilities': 'mvt_facilities',
-        'landuse': 'mvt_landuse',
-        'utilities': 'mvt_utilities',
+        'roads': ('mvt_roads', 'roads'),
+        'buildings': ('mvt_buildings', 'buildings'),
+        'facilities': ('mvt_facilities', 'facilities'),
+        'landuse': ('mvt_landuse', 'land_use'),
+        'utilities': ('mvt_utilities', 'water_lines'),
     }
 
     def get(self, request, layer, z, x, y):
@@ -681,10 +714,18 @@ class VectorTileView(views.APIView):
                 {"error": f"Invalid layer. Valid: {list(self.VALID_LAYERS.keys())}"},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
+        # Backend-enforced layer visibility (defensive: block restricted tiles
+        # for anonymous/low-clearance callers regardless of frontend hiding).
+        function_name, registry_key = self.VALID_LAYERS[layer]
+        if not user_has_layer_visibility(request.user, registry_key):
+            return Response(
+                {"error": "You do not have permission to access this layer."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
             from django.db import connection
-            function_name = self.VALID_LAYERS[layer]
             
             with connection.cursor() as cursor:
                 cursor.execute(f"SELECT {function_name}(%s, %s, %s)", [z, x, y])
@@ -760,6 +801,28 @@ class ExportView(views.APIView):
                 {"error": f"Unsupported layer '{layer}'. Valid: {get_supported_layers()}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # Backend-enforced export permission: the layer must be explicitly
+        # exportable in the registry AND the caller must have read visibility.
+        # This blocks anonymous/across-frontend calls to restricted layers such
+        # as /api/export/fiber_lines/.
+        if not can_export_layer(request.user, layer):
+            write_audit(
+                request.user if request.user.is_authenticated else None,
+                'EXPORT_DENIED',
+                details={'layer': layer, 'format': fmt},
+            )
+            return Response(
+                {"error": "You do not have permission to export this layer."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Audit successful export requests (Sprint 5 governance)
+        write_audit(
+            request.user if request.user.is_authenticated else None,
+            'EXPORT_REQUESTED',
+            details={'layer': layer, 'format': fmt},
+        )
         
         # Parse bbox
         bbox = None

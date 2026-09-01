@@ -24,6 +24,8 @@ urlpatterns = [
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    # Public GIS portal - STRICTLY read-only, registered once (not under legacy/api include)
+    path('api/public/', include('gis_app.urls_public')),
     # Versioned API (primary)
     path('api/v1/', include('gis_app.urls')),
     # Legacy API (backward compat, same handlers)

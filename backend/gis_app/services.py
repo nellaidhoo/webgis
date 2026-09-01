@@ -43,6 +43,7 @@ def _merge_layer(staging_model, production_model, session, user, prefix, field_m
             'created_by': staging.created_by or user,
             'survey_date': staging.survey_date,
             'source_file': staging.source_file,
+            'source_session': session,
             'accuracy': staging.accuracy,
             'status': 'ACTIVE',
         }

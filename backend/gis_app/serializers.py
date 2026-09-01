@@ -331,3 +331,41 @@ class StagingFiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer
     class Meta:
         model = StagingFiberNode
         fields = '__all__'
+
+
+# ==========================================
+# PUBLIC SERIALIZERS (anonymous / public portal)
+# Expose ONLY approved public fields. Internal metadata (created_by,
+# accuracy, source_file, source_session, audit info) is never serialized here.
+# ==========================================
+
+class PublicRoadSerializer(serializers.ModelSerializer):
+    geometry = GeometrySerializerField()
+    class Meta:
+        model = Road
+        fields = ['id', 'asset_code', 'road_name', 'road_code', 'surface_type', 'geometry']
+
+
+class PublicBuildingSerializer(serializers.ModelSerializer):
+    geometry = GeometrySerializerField()
+    class Meta:
+        model = Building
+        fields = ['id', 'asset_code', 'building_code', 'house_name', 'building_type', 'usage', 'floors', 'geometry']
+
+
+class PublicFacilitySerializer(serializers.ModelSerializer):
+    geometry = GeometrySerializerField()
+    category = serializers.SerializerMethodField()
+    class Meta:
+        model = Facility
+        fields = ['id', 'asset_code', 'name', 'category', 'geometry']
+
+    def get_category(self, obj):
+        return obj.category.name if obj.category else obj.category_old
+
+
+class PublicLandUseSerializer(serializers.ModelSerializer):
+    geometry = GeometrySerializerField()
+    class Meta:
+        model = LandUse
+        fields = ['id', 'asset_code', 'zone_class', 'zone_name', 'geometry']
