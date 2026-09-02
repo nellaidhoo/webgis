@@ -16,6 +16,7 @@ production server (`192.168.150.33`) and local dev workstation.
 | Sprint 4 | Data export (backend API + frontend UI) | ✅ Complete |
 | Sprint 5 | Security & data governance: layer visibility, export gating, public read-only portal, lineage | ✅ Complete |
 | Sprint 6 | Validation reports, in-app feature editing, write-path audits, password reset/forced change, fiber provider coloring, zoom-aware road labels | ✅ Complete |
+| Sprint 7 | Security hardening: composite-tile clearance intersection, role-aware internal-field stripping, addresses gated by layer registry, authenticated export enumeration | ✅ Complete |
 
 ---
 
@@ -246,7 +247,45 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 8. Legacy / Base Features (pre-sprint, retained)
+## 8. Sprint 7 — Security Hardening (post-S5 gap pass)
+
+### 8.1 Composite vector-tile clearance intersection
+- `VectorTileView.VALID_LAYERS` now maps each tile bucket to a **set** of
+  `LayerRegistry` keys it emits; access requires visibility on **every** key.
+  The `utilities` bucket (one MVT containing street lights + water + electrical)
+  is therefore gated by the strictest of those clearances — a Registered User
+  may read `street_lights` via the API but **cannot** pull the composite tile.
+
+### 8.2 Role-aware internal-field stripping (serializers)
+- `RoleAwareFieldStripMixin` applied to all 14 production layer serializers:
+  authenticated non-staff readers have `created_by`, `created_by_name`,
+  `source_file`, `source_session`, `accuracy` dropped from output, so low-
+  clearance users on readable layers get the same field hygiene the public
+  serializers enforce. Staff (Council Staff / Section Admin / Super Admin)
+  retain full fidelity; the write path is unaffected.
+
+### 8.3 Addresses gated via the layer registry
+- `AddressViewSet` switched from `IsStaffOrReadOnly` to
+  `[LayerVisibilityPermission, LayerWritePermission]` with `layer_key='buildings'`,
+  so address reads follow building-layer clearance and writes follow the shared
+  Section-Admin+ write rule (plus audit via `LayerWriteAuditMixin`).
+
+### 8.4 Authenticated export enumeration
+- `GET /api/export/` (and `/api/v1/export/`) now require authentication, closing
+  the anonymous layer/format enumeration surface; per-layer export remains gated
+  by `can_export_layer` exactly as before.
+
+### 8.5 Verification (S7)
+- `manage.py check` clean; targeted Django-shell/APIClient tests confirmed:
+  anon export list → 401; plain user 403 on composite utilities tile but 200 on
+  street_lights API; plain user road read omits all internal fields while
+  geometry persists; staff keeps fields and passes the tile gate; addresses
+  still readable by building-clearance users.
+- Stack harness **55/55 PASS** (7 new S7 checks added).
+
+---
+
+## 9. Legacy / Base Features (pre-sprint, retained)
 
 - **Vector tile serving** (`/api/tiles/<layer>/<z>/<x>/<y>/`) for fast map rendering.
 - **Combined trigram + proximity search** (`/api/search/`).
@@ -257,9 +296,9 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 9. Verification & Tooling
+## 10. Verification & Tooling
 
-- **Harness e2e:** `webgis-stack/harness.py` — full lifecycle test (login → upload → parse → approve → verify production → export) currently **49/49 PASS** (local).
+- **Harness e2e:** `webgis-stack/harness.py` — full lifecycle test (login → upload → parse → approve → verify production → export) currently **55/55 PASS** (local).
 - **Frontend:** `npx tsc --noEmit` clean; `npm run build` clean (local + server).
 - **Backend:** `manage.py check` clean.
 - **Deployment:** `pscp` → `/tmp/`, sudo-copy + `chown webgis:webgis`, `systemctl restart <unit>`; frontend rebuilt on server then restarted.
@@ -267,7 +306,7 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 10. Known Notes / Decisions
+## 11. Known Notes / Decisions
 
 - **Global DRF pagination is intentionally disabled** — MapViewer loads all features via `data.results || data`; pagination is scoped **only** to `SurveySessionViewSet`.
 - **`created_by_name` must be declared in the serializer class body** (not inherited via mixin) due to DRF metaclass behavior.

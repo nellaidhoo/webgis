@@ -172,10 +172,11 @@ class BuildingViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
         serializer = AddressSerializer(addresses, many=True)
         return Response(serializer.data)
 
-class AddressViewSet(viewsets.ModelViewSet):
+class AddressViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = Address.objects.all()
     serializer_class = AddressSerializer
-    permission_classes = [IsStaffOrReadOnly]
+    layer_key = 'buildings'
+    permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 class LandUseViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = LandUse.objects.filter(status='ACTIVE')
@@ -838,12 +839,17 @@ class VectorTileView(views.APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    # Each tile bucket maps to one or more LayerRegistry keys. A caller must
+    # have visibility on EVERY key the bucket emits (intersection = strictest
+    # clearance), so a composite bucket such as 'utilities' (which emits
+    # street lights, water and electrical lines in a single tile) requires the
+    # highest of those clearances rather than the least-restrictive one.
     VALID_LAYERS = {
-        'roads': ('mvt_roads', 'roads'),
-        'buildings': ('mvt_buildings', 'buildings'),
-        'facilities': ('mvt_facilities', 'facilities'),
-        'landuse': ('mvt_landuse', 'land_use'),
-        'utilities': ('mvt_utilities', 'water_lines'),
+        'roads': ('mvt_roads', ('roads',)),
+        'buildings': ('mvt_buildings', ('buildings',)),
+        'facilities': ('mvt_facilities', ('facilities',)),
+        'landuse': ('mvt_landuse', ('land_use',)),
+        'utilities': ('mvt_utilities', ('street_lights', 'water_lines', 'electrical_lines')),
     }
 
     def get(self, request, layer, z, x, y):
@@ -860,8 +866,9 @@ class VectorTileView(views.APIView):
 
         # Backend-enforced layer visibility (defensive: block restricted tiles
         # for anonymous/low-clearance callers regardless of frontend hiding).
-        function_name, registry_key = self.VALID_LAYERS[layer]
-        if not user_has_layer_visibility(request.user, registry_key):
+        # The caller must clear EVERY registry key the bucket emits.
+        function_name, registry_keys = self.VALID_LAYERS[layer]
+        if not all(user_has_layer_visibility(request.user, key) for key in registry_keys):
             return Response(
                 {"error": "You do not have permission to access this layer."},
                 status=status.HTTP_403_FORBIDDEN
@@ -1029,8 +1036,9 @@ class ExportView(views.APIView):
 
 
 class ExportLayersView(views.APIView):
-    """List all available export layers and formats."""
-    permission_classes = [permissions.AllowAny]
+    """List all available export layers and formats (authenticated only - enumeration is
+    a reconnaissance surface that should not be open to anonymous callers)."""
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         from .export import get_supported_layers, get_supported_formats

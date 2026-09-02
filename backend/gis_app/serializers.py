@@ -12,6 +12,7 @@ from .models import (
     StagingManhole, StagingSewerJunction, StagingElectricalLine, StagingElectricalNode,
     StagingFiberLine, StagingFiberNode, SurveyValidationReport
 )
+from .security import is_staff as _has_staff_clearance
 
 # Custom field to handle GeoDjango geometry fields seamlessly in DRF
 class GeometrySerializerField(serializers.Field):
@@ -66,6 +67,45 @@ class CreatedByNameMixin:
             return None
         return (u.get_full_name() or u.username) if u else None
 
+
+# Internal metadata fields shared by every production GIS layer. These are
+# safe for council-level editors/inspectors but should not be exposed to
+# lower-clearance authenticated users (Registered User) who can read a layer.
+# Public serializers already strip these; this mixin applies the same rule to
+# the authenticated layer serializers based on the caller's role, so
+# readability and field-stripping stay coupled to clearance.
+ROLE_SENSITIVE_INTERNAL_FIELDS = (
+    'created_by',
+    'created_by_name',
+    'source_file',
+    'source_session',
+    'accuracy',
+)
+
+
+class RoleAwareFieldStripMixin:
+    """
+    Conditionally omit the internal metadata fields from serialized output when
+    the caller lacks section-admin (staff) clearance. Section Admin / Super
+    Admin continue to receive full fidelity; everyone else gets the stripped
+    view so low-clearance users never learn survey provenance or precision.
+
+    The write path is unaffected: fields are still writable by staff, and this
+    only alters to_representation (read output).
+    """
+
+    #: fields to drop for non-staff readers
+    strip_fields = ROLE_SENSITIVE_INTERNAL_FIELDS
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if user is not None and user.is_authenticated and not _has_staff_clearance(user):
+            for f in self.strip_fields:
+                ret.pop(f, None)
+        return ret
+
 # User Serializer
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -73,7 +113,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
 
 # --- CORE LAYER SERIALIZERS ---
-class RoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class RoadSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -81,7 +121,7 @@ class RoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = Road
         fields = '__all__'
 
-class BuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class BuildingSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -99,7 +139,7 @@ class AddressSerializer(serializers.ModelSerializer):
         model = Address
         fields = '__all__'
 
-class LandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class LandUseSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -107,7 +147,7 @@ class LandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = LandUse
         fields = '__all__'
 
-class FacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class FacilitySerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -121,7 +161,7 @@ class FacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
         return obj.category.name if obj.category else obj.category_old
 
 # --- ASSETS & UTILITIES SERIALIZERS ---
-class StreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class StreetLightSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -129,7 +169,7 @@ class StreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = StreetLight
         fields = '__all__'
 
-class WaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class WaterLineSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -137,7 +177,7 @@ class WaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = WaterLine
         fields = '__all__'
 
-class WaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class WaterNodeSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -145,7 +185,7 @@ class WaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = WaterNode
         fields = '__all__'
 
-class SewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class SewerLineSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -153,7 +193,7 @@ class SewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = SewerLine
         fields = '__all__'
 
-class ManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class ManholeSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -161,7 +201,7 @@ class ManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = Manhole
         fields = '__all__'
 
-class SewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class SewerJunctionSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -169,7 +209,7 @@ class SewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = SewerJunction
         fields = '__all__'
 
-class ElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class ElectricalLineSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -177,7 +217,7 @@ class ElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = ElectricalLine
         fields = '__all__'
 
-class ElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class ElectricalNodeSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -185,7 +225,7 @@ class ElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = ElectricalNode
         fields = '__all__'
 
-class FiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class FiberLineSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
@@ -193,7 +233,7 @@ class FiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
         model = FiberLine
         fields = '__all__'
 
-class FiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
+class FiberNodeSerializer(CreatedByNameMixin, RoleAwareFieldStripMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
