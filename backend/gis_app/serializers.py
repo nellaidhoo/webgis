@@ -10,7 +10,7 @@ from .models import (
     StagingRoad, StagingBuilding, StagingLandUse, StagingFacility,
     StagingStreetLight, StagingWaterLine, StagingWaterNode, StagingSewerLine,
     StagingManhole, StagingSewerJunction, StagingElectricalLine, StagingElectricalNode,
-    StagingFiberLine, StagingFiberNode
+    StagingFiberLine, StagingFiberNode, SurveyValidationReport
 )
 
 # Custom field to handle GeoDjango geometry fields seamlessly in DRF
@@ -38,6 +38,21 @@ class GeometrySerializerField(serializers.Field):
                 geom.srid = 4326
             # Reproject to our storage CRS: UTM Zone 43N (EPSG:32643)
             geom.transform(32643)
+            # Validate the projected geometry before persisting so bad edits
+            # (self-intersections, too-few vertices, out-of-bounds coords)
+            # are rejected at the API boundary rather than reaching staging.
+            from .validators import GeometryValidator
+            gv = GeometryValidator()
+            errors = []
+            if getattr(geom, 'geom_type', '') in ('Polygon', 'MultiPolygon'):
+                errors.extend(gv.validate_polygon(geom, 'geometry'))
+            elif getattr(geom, 'geom_type', '') in ('LineString', 'MultiLineString'):
+                errors.extend(gv.validate_linestring(geom, 'geometry'))
+            elif getattr(geom, 'geom_type', '') in ('Point', 'MultiPoint'):
+                errors.extend(gv.validate_point(geom, 'geometry'))
+            errors.extend(gv.validate_coordinates_in_maldives(geom))
+            if errors:
+                raise ValueError(errors[0])
             return geom
         except Exception as e:
             raise serializers.ValidationError(f"Invalid GeoJSON geometry: {e}")
@@ -60,6 +75,7 @@ class UserSerializer(serializers.ModelSerializer):
 # --- CORE LAYER SERIALIZERS ---
 class RoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = Road
@@ -67,6 +83,7 @@ class RoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class BuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     addresses_count = serializers.IntegerField(source='addresses.count', read_only=True)
     
@@ -84,6 +101,7 @@ class AddressSerializer(serializers.ModelSerializer):
 
 class LandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = LandUse
@@ -91,6 +109,7 @@ class LandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class FacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
 
@@ -104,6 +123,7 @@ class FacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
 # --- ASSETS & UTILITIES SERIALIZERS ---
 class StreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StreetLight
@@ -111,6 +131,7 @@ class StreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class WaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = WaterLine
@@ -118,6 +139,7 @@ class WaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class WaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = WaterNode
@@ -125,6 +147,7 @@ class WaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class SewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = SewerLine
@@ -132,6 +155,7 @@ class SewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class ManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = Manhole
@@ -139,6 +163,7 @@ class ManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class SewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = SewerJunction
@@ -146,6 +171,7 @@ class SewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class ElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = ElectricalLine
@@ -153,6 +179,7 @@ class ElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class ElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = ElectricalNode
@@ -160,6 +187,7 @@ class ElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class FiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = FiberLine
@@ -167,6 +195,7 @@ class FiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class FiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = FiberNode
@@ -183,6 +212,12 @@ class ProcessingJobSerializer(serializers.ModelSerializer):
         model = ProcessingJob
         fields = '__all__'
 
+class SurveyValidationReportSerializer(serializers.ModelSerializer):
+    validated_by_name = serializers.CharField(source='validated_by.username', read_only=True)
+    class Meta:
+        model = SurveyValidationReport
+        fields = '__all__'
+
 class ApprovalHistorySerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     class Meta:
@@ -194,6 +229,7 @@ class SurveySessionSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(source='approved_by.username', read_only=True)
     files = UploadedFileSerializer(many=True, read_only=True)
     jobs = ProcessingJobSerializer(many=True, read_only=True)
+    validation_reports = SurveyValidationReportSerializer(many=True, read_only=True)
     
     # Counts of staged features
     staged_counts = serializers.SerializerMethodField()
@@ -231,6 +267,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
 # Used by the staged preview endpoint to review unmerged survey features.
 class StagingRoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingRoad
@@ -238,6 +275,7 @@ class StagingRoadSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class StagingBuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingBuilding
@@ -245,6 +283,7 @@ class StagingBuildingSerializer(CreatedByNameMixin, serializers.ModelSerializer)
 
 class StagingLandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingLandUse
@@ -252,6 +291,7 @@ class StagingLandUseSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class StagingFacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
 
@@ -264,6 +304,7 @@ class StagingFacilitySerializer(CreatedByNameMixin, serializers.ModelSerializer)
 
 class StagingStreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingStreetLight
@@ -271,6 +312,7 @@ class StagingStreetLightSerializer(CreatedByNameMixin, serializers.ModelSerializ
 
 class StagingWaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingWaterLine
@@ -278,6 +320,7 @@ class StagingWaterLineSerializer(CreatedByNameMixin, serializers.ModelSerializer
 
 class StagingWaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingWaterNode
@@ -285,6 +328,7 @@ class StagingWaterNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer
 
 class StagingSewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingSewerLine
@@ -292,6 +336,7 @@ class StagingSewerLineSerializer(CreatedByNameMixin, serializers.ModelSerializer
 
 class StagingManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingManhole
@@ -299,6 +344,7 @@ class StagingManholeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
 
 class StagingSewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingSewerJunction
@@ -306,6 +352,7 @@ class StagingSewerJunctionSerializer(CreatedByNameMixin, serializers.ModelSerial
 
 class StagingElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingElectricalLine
@@ -313,6 +360,7 @@ class StagingElectricalLineSerializer(CreatedByNameMixin, serializers.ModelSeria
 
 class StagingElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingElectricalNode
@@ -320,6 +368,7 @@ class StagingElectricalNodeSerializer(CreatedByNameMixin, serializers.ModelSeria
 
 class StagingFiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingFiberLine
@@ -327,6 +376,7 @@ class StagingFiberLineSerializer(CreatedByNameMixin, serializers.ModelSerializer
 
 class StagingFiberNodeSerializer(CreatedByNameMixin, serializers.ModelSerializer):
     geometry = GeometrySerializerField()
+    asset_code = serializers.CharField(required=False, allow_blank=True, max_length=50)
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = StagingFiberNode

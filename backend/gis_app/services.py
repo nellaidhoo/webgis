@@ -8,8 +8,10 @@ import uuid
 from django.db import transaction
 from django.utils import timezone
 
+from .validators import validator
+
 from .models import (
-    SurveySession, ApprovalHistory, AuditLog,
+    SurveySession, SurveyValidationReport, ApprovalHistory, AuditLog,
     Road, StagingRoad,
     Building, StagingBuilding,
     LandUse, StagingLandUse,
@@ -72,7 +74,7 @@ LAYER_SPECS = [
     ('StagingSewerJunction', 'SewerJunction', 'SJ', {}),
     ('StagingElectricalLine', 'ElectricalLine', 'ELINE', {'voltage': 'voltage', 'cable_type': 'cable_type'}),
     ('StagingElectricalNode', 'ElectricalNode', 'ENODE', {'node_type': 'node_type', 'capacity_kva': 'capacity_kva'}),
-    ('StagingFiberLine', 'FiberLine', 'FLINE', {'core_count': 'core_count'}),
+    ('StagingFiberLine', 'FiberLine', 'FLINE', {'provider': 'provider', 'core_count': 'core_count'}),
     ('StagingFiberNode', 'FiberNode', 'FNODE', {'node_type': 'node_type'}),
 ]
 
@@ -153,3 +155,66 @@ def clear_staging(session):
     """Delete every staging feature linked to `session`."""
     for staging_name, _, _, _ in LAYER_SPECS:
         globals()[staging_name].objects.filter(session=session).delete()
+
+
+# Map each staging layer's asset-code validation key (matches AssetCodeValidator.PATTERNS).
+STAGING_ASSET_TYPES = {
+    'StagingRoad': 'road',
+    'StagingBuilding': 'building',
+    'StagingFacility': 'facility',
+    'StagingStreetLight': 'street_light',
+    'StagingWaterLine': 'water_line',
+    'StagingSewerLine': 'sewer_line',
+    'StagingElectricalLine': 'electrical_line',
+    'StagingFiberLine': 'fiber_line',
+}
+
+
+def generate_validation_report(session, user=None):
+    """
+    Run data-quality validation over every staging feature of `session`,
+    then upsert a dedicated SurveyValidationReport.
+
+    Distinct from ProcessingJob: this reports the *outcome* of validating the
+    staged GIS records (geometry + asset-code rules), not the async import
+    pipeline state.
+    """
+    total_features = 0
+    error_count = 0
+    error_details = []
+
+    for staging_name, _, _, _ in LAYER_SPECS:
+        staging_model = globals()[staging_name]
+        asset_type = STAGING_ASSET_TYPES.get(staging_name)
+        for feature in staging_model.objects.filter(session=session):
+            total_features += 1
+            for message in validator.validate_feature(feature, asset_type):
+                error_count += 1
+                error_details.append({
+                    'layer': LAYER_LABELS[staging_name.replace('Staging', '')],
+                    'id': str(feature.id),
+                    'asset_code': feature.asset_code,
+                    'error': message,
+                })
+
+    status = SurveyValidationReport.Status.PASSED if error_count == 0 else SurveyValidationReport.Status.FAILED
+    summary = (
+        "All staged features passed validation."
+        if error_count == 0
+        else f"{error_count} validation issue(s) found across {total_features} staged feature(s)."
+    )
+
+    report, _ = SurveyValidationReport.objects.update_or_create(
+        session=session,
+        defaults={
+            'status': status,
+            'summary': summary,
+            'total_features': total_features,
+            'error_count': error_count,
+            'warning_count': 0,
+            'error_details': error_details,
+            'validated_by': user,
+            'validated_at': timezone.now(),
+        },
+    )
+    return report

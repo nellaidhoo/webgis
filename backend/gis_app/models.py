@@ -126,6 +126,44 @@ class ProcessingJob(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
+class SurveyValidationReport(models.Model):
+    """
+    Dedicated data-quality validation report for a survey session.
+
+    Distinct from ProcessingJob: ProcessingJob tracks the async import/parse
+    pipeline state, while SurveyValidationReport captures the outcome of
+    data-quality validation (geometry/asset-code rules) over the staged data.
+    Kept separate so a failed import and a failed validation are never conflated.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        PASSED = 'PASSED', 'Passed'
+        FAILED = 'FAILED', 'Failed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        SurveySession, on_delete=models.CASCADE, related_name='validation_reports'
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    summary = models.TextField(blank=True, help_text="Human-readable validation summary")
+    total_features = models.IntegerField(default=0)
+    error_count = models.IntegerField(default=0)
+    warning_count = models.IntegerField(default=0)
+    error_details = models.JSONField(default=list, blank=True, help_text="List of {layer, code, message} dicts")
+    validated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    validated_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Validation {self.id} ({self.status})"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Survey Validation Report'
+        verbose_name_plural = 'Survey Validation Reports'
+
 class ApprovalHistory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session = models.ForeignKey(SurveySession, on_delete=models.CASCADE, related_name='approvals')
@@ -140,9 +178,9 @@ class ApprovalHistory(models.Model):
 
 # --- ROADS ---
 class Road(BaseGISModel):
-    road_name = models.CharField(max_length=150)
-    road_code = models.CharField(max_length=50)
-    surface_type = models.CharField(max_length=50)
+    road_name = models.CharField(max_length=150, blank=True)
+    road_code = models.CharField(max_length=50, blank=True)
+    surface_type = models.CharField(max_length=50, blank=True)
     geometry = models.LineStringField(srid=32643) # UTM Zone 43N
 
     class Meta:
@@ -166,9 +204,9 @@ class StagingRoad(BaseStagingModel):
 
 # --- BUILDINGS ---
 class Building(BaseGISModel):
-    building_code = models.CharField(max_length=50)
+    building_code = models.CharField(max_length=50, blank=True)
     house_name = models.CharField(max_length=150, blank=True)
-    building_type = models.CharField(max_length=50) # Residential, Commercial, Gov, etc.
+    building_type = models.CharField(max_length=50, blank=True) # Residential, Commercial, Gov, etc.
     usage = models.CharField(max_length=100, blank=True)
     floors = models.IntegerField(default=1)
     geometry = models.PolygonField(srid=32643)
@@ -212,8 +250,8 @@ class Address(models.Model):
 
 # --- LAND USE ---
 class LandUse(BaseGISModel):
-    zone_class = models.CharField(max_length=50) # Residential, Commercial, Industrial, Green Area, Conservation
-    zone_name = models.CharField(max_length=100)
+    zone_class = models.CharField(max_length=50, blank=True) # Residential, Commercial, Industrial, Green Area, Conservation
+    zone_name = models.CharField(max_length=100, blank=True)
     geometry = models.PolygonField(srid=32643)
 
     class Meta:
@@ -233,7 +271,7 @@ class StagingLandUse(BaseStagingModel):
 
 # --- FACILITIES ---
 class Facility(BaseGISModel):
-    name = models.CharField(max_length=150)
+    name = models.CharField(max_length=150, blank=True)
     category = models.ForeignKey(
         'FacilityCategory', 
         on_delete=models.SET_NULL, 
@@ -313,7 +351,7 @@ class StagingWaterLine(BaseStagingModel):
         ]
 
 class WaterNode(BaseGISModel):
-    node_type = models.CharField(max_length=50) # Valve, Meter, Hydrant, Pump
+    node_type = models.CharField(max_length=50, blank=True) # Valve, Meter, Hydrant, Pump
     geometry = models.PointField(srid=32643)
 
     class Meta:
@@ -387,7 +425,7 @@ class StagingSewerJunction(BaseStagingModel):
 
 # --- ELECTRICAL NETWORK ---
 class ElectricalLine(BaseGISModel):
-    voltage = models.CharField(max_length=50) # 230V, 11kV, 22kV
+    voltage = models.CharField(max_length=50, blank=True) # 230V, 11kV, 22kV
     cable_type = models.CharField(max_length=50, blank=True) # Underground, Overhead
     geometry = models.LineStringField(srid=32643)
 
@@ -407,7 +445,7 @@ class StagingElectricalLine(BaseStagingModel):
         ]
 
 class ElectricalNode(BaseGISModel):
-    node_type = models.CharField(max_length=50) # Transformer, DistributionBox, Generator
+    node_type = models.CharField(max_length=50, blank=True) # Transformer, DistributionBox, Generator
     capacity_kva = models.IntegerField(null=True, blank=True)
     geometry = models.PointField(srid=32643)
 
@@ -428,15 +466,18 @@ class StagingElectricalNode(BaseStagingModel):
 
 # --- FIBER NETWORK ---
 class FiberLine(BaseGISModel):
+    provider = models.CharField(max_length=100, blank=True, help_text="Fiber service provider owning this cable")
     core_count = models.IntegerField(null=True, blank=True)
     geometry = models.LineStringField(srid=32643)
 
     class Meta:
         indexes = [
+            models.Index(fields=['provider']),
             models.Index(name='fiberline_geom_gist', fields=['geometry']),
         ]
 
 class StagingFiberLine(BaseStagingModel):
+    provider = models.CharField(max_length=100, blank=True)
     core_count = models.IntegerField(null=True, blank=True)
     geometry = models.LineStringField(srid=32643)
 
@@ -446,7 +487,7 @@ class StagingFiberLine(BaseStagingModel):
         ]
 
 class FiberNode(BaseGISModel):
-    node_type = models.CharField(max_length=50) # Cabinet, SpliceEnclosure, OLT
+    node_type = models.CharField(max_length=50, blank=True) # Cabinet, SpliceEnclosure, OLT
     geometry = models.PointField(srid=32643)
 
     class Meta:
@@ -509,6 +550,39 @@ class UserRegistrationRequest(models.Model):
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Registration Request'
+
+
+# 6.5 ACCOUNT SECURITY (PASSWORD ROTATION / FORCED CHANGE)
+# ==========================================
+class UserAccountProfile(models.Model):
+    """
+    Security metadata for each account. Kept separate from the Django User so
+    we never have to swap AUTH_USER_MODEL.
+
+    must_change_password is set by an admin password reset (or on first
+    credential issuance) and forces the user to set a new password at their
+    next login before any other work in the app.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='account_profile')
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Force the user to change their password at next login."
+    )
+    password_changed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} (force={self.must_change_password})"
+
+    @classmethod
+    def get_for(cls, user):
+        """Return (or create) the account profile for a user."""
+        profile, _ = cls.objects.get_or_create(user=user)
+        return profile
+
+    class Meta:
+        verbose_name = 'Account Profile'
+        verbose_name_plural = 'Account Profiles'
         verbose_name_plural = 'Registration Requests'
 
 

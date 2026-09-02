@@ -9,7 +9,7 @@ from .models import (
     SewerLine, StagingSewerLine, Manhole, StagingManhole, SewerJunction, StagingSewerJunction,
     ElectricalLine, StagingElectricalLine, ElectricalNode, StagingElectricalNode,
     FiberLine, StagingFiberLine, FiberNode, StagingFiberNode, FacilityCategory,
-    UserRegistrationRequest
+    UserRegistrationRequest, SurveyValidationReport, UserAccountProfile
 )
 
 
@@ -122,6 +122,14 @@ class UploadedFileAdmin(admin.ModelAdmin):
 class ProcessingJobAdmin(admin.ModelAdmin):
     list_display = ('id', 'session', 'status', 'started_at', 'completed_at')
     list_filter = ('status',)
+
+
+@admin.register(SurveyValidationReport)
+class SurveyValidationReportAdmin(admin.ModelAdmin):
+    list_display = ('id', 'session', 'status', 'total_features', 'error_count', 'warning_count', 'validated_at')
+    list_filter = ('status', 'validated_at')
+    search_fields = ('id', 'session__id')
+    readonly_fields = ('id', 'created_at')
 
 
 @admin.register(ApprovalHistory)
@@ -299,16 +307,16 @@ class StagingElectricalNodeAdmin(BaseGISAdmin):
 
 @admin.register(FiberLine)
 class FiberLineAdmin(BaseGISAdmin):
-    list_display = ('asset_code', 'core_count', 'status')
-    list_filter = ('status',)
-    search_fields = ('asset_code',)
+    list_display = ('asset_code', 'provider', 'core_count', 'status')
+    list_filter = ('status', 'provider')
+    search_fields = ('asset_code', 'provider')
 
 
 @admin.register(StagingFiberLine)
 class StagingFiberLineAdmin(BaseGISAdmin):
-    list_display = ('asset_code', 'core_count', 'session')
-    list_filter = ('session__status',)
-    search_fields = ('asset_code',)
+    list_display = ('asset_code', 'provider', 'core_count', 'session')
+    list_filter = ('session__status', 'provider')
+    search_fields = ('asset_code', 'provider')
 
 
 @admin.register(FiberNode)
@@ -391,3 +399,39 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
         self.message_user(request, f"Rejected {rejected_count} registration(s).")
 
     reject_registrations.short_description = "Reject selected registrations"
+
+
+@admin.register(UserAccountProfile)
+class UserAccountProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'must_change_password', 'password_changed_at', 'updated_at']
+    list_filter = ['must_change_password']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['password_changed_at', 'updated_at']
+    actions = ['require_password_change']
+
+    def require_password_change(self, request, queryset):
+        """Force the selected users to change their password at next login."""
+        from .notifications import notify_password_reset
+        import secrets
+        import string
+
+        reset = 0
+        for profile in queryset.select_related('user'):
+            user = profile.user
+            alphabet = string.ascii_letters + string.digits
+            temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
+            user.set_password(temp_password)
+            user.save()
+
+            profile.must_change_password = True
+            profile.save(update_fields=['must_change_password'])
+
+            try:
+                notify_password_reset(user, temp_password)
+            except Exception:
+                pass
+            reset += 1
+
+        self.message_user(request, f"Password reset for {reset} user(s). Accounts must change it at next login.")
+
+    require_password_change.short_description = "Reset password & require change at next login"

@@ -64,7 +64,7 @@ class DataExporter:
         },
         'fiber_lines': {
             'model': 'gis_app.FiberLine',
-            'fields': ['id', 'asset_code', 'core_count', 'status'],
+            'fields': ['id', 'asset_code', 'provider', 'core_count', 'status'],
             'geometry_field': 'geometry',
             'geometry_type': 'LineString'
         },

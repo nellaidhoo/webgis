@@ -17,7 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import HttpResponse
 
 from .models import (
-    SurveySession, UploadedFile, ProcessingJob, ApprovalHistory,
+    SurveySession, SurveyValidationReport, UserAccountProfile, UploadedFile, ProcessingJob, ApprovalHistory,
     Road, Building, Address, LandUse, Facility,
     StreetLight, WaterLine, WaterNode, SewerLine, Manhole, SewerJunction,
     ElectricalLine, ElectricalNode, FiberLine, FiberNode, AuditLog,
@@ -28,6 +28,7 @@ from .models import (
 )
 from .serializers import (
     SurveySessionSerializer, UploadedFileSerializer, ProcessingJobSerializer,
+    SurveyValidationReportSerializer,
     ApprovalHistorySerializer, UserSerializer,
     RoadSerializer, BuildingSerializer, AddressSerializer, LandUseSerializer,
     FacilitySerializer, StreetLightSerializer, WaterLineSerializer, WaterNodeSerializer,
@@ -113,14 +114,52 @@ class CanUploadData(permissions.BasePermission):
             or request.user.groups.filter(name__in=['Super Admin', 'Section Admin', 'Council Staff', 'Registered User']).exists()
         )
 
+
+class LayerWriteAuditMixin:
+    """
+    Base for every gated layer viewset. Funnels create/update/delete through
+    write_audit so feature edits (geometry/attribute changes, flagging INACTIVE,
+    hard deletes) leave a traceable AuditLog entry alongside the record change.
+    """
+
+    # Asset-code prefix per layer_key (used when a new feature is created from
+    # the map without an explicit code). Mirrors services._new_asset_code.
+    ASSET_CODE_PREFIXES = {
+        'roads': 'ROAD', 'buildings': 'BLDG', 'land_use': 'ZONE', 'facilities': 'FAC',
+        'street_lights': 'SL', 'water_lines': 'WLINE', 'water_nodes': 'WNODE',
+        'sewer_lines': 'SLINE', 'manholes': 'MH', 'sewer_junctions': 'SJ',
+        'electrical_lines': 'ELINE', 'electrical_nodes': 'ENODE',
+        'fiber_lines': 'FLINE', 'fiber_nodes': 'FNODE',
+    }
+
+    def _new_asset_code(self):
+        import uuid
+        prefix = self.ASSET_CODE_PREFIXES.get(getattr(self, 'layer_key', ''), 'ASSET')
+        return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
+
+    def perform_create(self, serializer):
+        create_kwargs = {'created_by': self.request.user}
+        if not (serializer.validated_data.get('asset_code') or '').strip():
+            create_kwargs['asset_code'] = self._new_asset_code()
+        instance = serializer.save(**create_kwargs)
+        write_audit(self.request.user, 'LAYER_CREATE', obj=instance)
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        write_audit(self.request.user, 'LAYER_UPDATE', obj=instance)
+
+    def perform_destroy(self, instance):
+        write_audit(self.request.user, 'LAYER_DELETE', obj=instance)
+        instance.delete()
+
 # --- CORE LAYER VIEWSETS ---
-class RoadViewSet(viewsets.ModelViewSet):
+class RoadViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = Road.objects.filter(status='ACTIVE')
     serializer_class = RoadSerializer
     layer_key = 'roads'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class BuildingViewSet(viewsets.ModelViewSet):
+class BuildingViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = Building.objects.filter(status='ACTIVE')
     serializer_class = BuildingSerializer
     layer_key = 'buildings'
@@ -138,74 +177,74 @@ class AddressViewSet(viewsets.ModelViewSet):
     serializer_class = AddressSerializer
     permission_classes = [IsStaffOrReadOnly]
 
-class LandUseViewSet(viewsets.ModelViewSet):
+class LandUseViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = LandUse.objects.filter(status='ACTIVE')
     serializer_class = LandUseSerializer
     layer_key = 'land_use'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class FacilityViewSet(viewsets.ModelViewSet):
+class FacilityViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = Facility.objects.filter(status='ACTIVE')
     serializer_class = FacilitySerializer
     layer_key = 'facilities'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
 # --- ASSETS & UTILITY VIEWSETS ---
-class StreetLightViewSet(viewsets.ModelViewSet):
+class StreetLightViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = StreetLight.objects.filter(status='ACTIVE')
     serializer_class = StreetLightSerializer
     layer_key = 'street_lights'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class WaterLineViewSet(viewsets.ModelViewSet):
+class WaterLineViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = WaterLine.objects.filter(status='ACTIVE')
     serializer_class = WaterLineSerializer
     layer_key = 'water_lines'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class WaterNodeViewSet(viewsets.ModelViewSet):
+class WaterNodeViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = WaterNode.objects.filter(status='ACTIVE')
     serializer_class = WaterNodeSerializer
     layer_key = 'water_nodes'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class SewerLineViewSet(viewsets.ModelViewSet):
+class SewerLineViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = SewerLine.objects.filter(status='ACTIVE')
     serializer_class = SewerLineSerializer
     layer_key = 'sewer_lines'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class ManholeViewSet(viewsets.ModelViewSet):
+class ManholeViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = Manhole.objects.filter(status='ACTIVE')
     serializer_class = ManholeSerializer
     layer_key = 'manholes'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class SewerJunctionViewSet(viewsets.ModelViewSet):
+class SewerJunctionViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = SewerJunction.objects.filter(status='ACTIVE')
     serializer_class = SewerJunctionSerializer
     layer_key = 'sewer_junctions'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class ElectricalLineViewSet(viewsets.ModelViewSet):
+class ElectricalLineViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = ElectricalLine.objects.filter(status='ACTIVE')
     serializer_class = ElectricalLineSerializer
     layer_key = 'electrical_lines'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class ElectricalNodeViewSet(viewsets.ModelViewSet):
+class ElectricalNodeViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = ElectricalNode.objects.filter(status='ACTIVE')
     serializer_class = ElectricalNodeSerializer
     layer_key = 'electrical_nodes'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class FiberLineViewSet(viewsets.ModelViewSet):
+class FiberLineViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = FiberLine.objects.filter(status='ACTIVE')
     serializer_class = FiberLineSerializer
     layer_key = 'fiber_lines'
     permission_classes = [LayerVisibilityPermission, LayerWritePermission]
 
-class FiberNodeViewSet(viewsets.ModelViewSet):
+class FiberNodeViewSet(LayerWriteAuditMixin, viewsets.ModelViewSet):
     queryset = FiberNode.objects.filter(status='ACTIVE')
     serializer_class = FiberNodeSerializer
     layer_key = 'fiber_nodes'
@@ -326,6 +365,22 @@ class SurveySessionViewSet(viewsets.ModelViewSet):
             )
 
         return Response({"status": "Session rejected and staging layers purged."})
+
+    # Generate (or refresh) the data-quality validation report for a session.
+    @action(detail=True, methods=['post'], permission_classes=[CanUploadData])
+    def validate(self, request, pk=None):
+        session = self.get_object()
+        try:
+            report = services.generate_validation_report(session, request.user)
+        except Exception as e:
+            return Response(
+                {"error": f"Validation failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        return Response(
+            SurveyValidationReportSerializer(report).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     # Staged feature preview endpoint: returns all draft staging features
     # grouped by layer for a given session (used for pre-approval review).
@@ -590,10 +645,13 @@ class MeView(views.APIView):
 
     def get(self, request):
         user = request.user
+        profile = UserAccountProfile.get_for(user)
         return Response({
             "user": UserSerializer(user).data,
             "role": primary_role(user),
             "roles": user_roles(user),
+            "must_change_password": profile.must_change_password,
+            "password_changed_at": profile.password_changed_at,
         })
 
     def patch(self, request):
@@ -609,11 +667,96 @@ class MeView(views.APIView):
         if updated:
             user.save(update_fields=updated)
 
+        profile = UserAccountProfile.get_for(user)
         return Response({
             "user": UserSerializer(user).data,
             "role": primary_role(user),
             "roles": user_roles(user),
+            "must_change_password": profile.must_change_password,
             "updated_fields": updated,
+        })
+
+
+class ChangePasswordView(views.APIView):
+    """
+    Authenticated user changes their own password. Clears the forced-change
+    flag (must_change_password) so a reset/initial-credential flow can require
+    a new password exactly once.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current = request.data.get('current_password', '')
+        new_password = request.data.get('new_password', '')
+        confirm = request.data.get('confirm_password', '')
+
+        if not new_password:
+            return Response({"error": "New password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != confirm:
+            return Response({"error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if not user.check_password(current):
+            return Response({"error": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(new_password, user)
+        except Exception as exc:
+            return Response({"errors": getattr(exc, 'messages', [str(exc)])}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+
+        profile = UserAccountProfile.get_for(user)
+        if profile.must_change_password:
+            profile.must_change_password = False
+            profile.save(update_fields=['must_change_password'])
+
+        write_audit(user, 'AUTH_PASSWORD_CHANGE', details={'user': user.username})
+
+        return Response({"message": "Password updated successfully."})
+
+
+class AdminResetPasswordView(views.APIView):
+    """
+    Super Admin resets a target user's password to a generated temp value and
+    marks the account for a forced password change at next login.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, user_id=None):
+        if not user_id:
+            return Response({"error": "A user id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits
+        temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
+
+        user.set_password(temp_password)
+        user.save()
+
+        profile = UserAccountProfile.get_for(user)
+        profile.must_change_password = True
+        profile.save(update_fields=['must_change_password'])
+
+        try:
+            from .notifications import notify_password_reset
+            notify_password_reset(user, temp_password)
+        except Exception:
+            pass
+
+        write_audit(request.user, 'AUTH_PASSWORD_RESET', details={'target_user': user.username})
+
+        return Response({
+            "message": "Password reset. User must change it at next login.",
+            "temp_password": temp_password,
+            "must_change_password": True,
         })
 
 

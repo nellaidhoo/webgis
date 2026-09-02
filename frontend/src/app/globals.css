@@ -128,6 +128,27 @@ html, body, #__next {
   color: #ef4444 !important;
 }
 
+/* Zoom-aware permanent road-name labels with a subtle halo for readability
+   over both the dark vector basemap and the orthophoto */
+.leaflet-tooltip.road-name-label {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #f8fafc !important;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-shadow:
+    -1px -1px 0 rgba(2, 6, 23, 0.9),
+    1px -1px 0 rgba(2, 6, 23, 0.9),
+    -1px 1px 0 rgba(2, 6, 23, 0.9),
+    1px 1px 0 rgba(2, 6, 23, 0.9),
+    0 2px 4px rgba(2, 6, 23, 0.8);
+  padding: 0 !important;
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* Micro-animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }

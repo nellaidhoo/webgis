@@ -11,6 +11,7 @@ import SearchBar from './SearchBar';
 import AdminPanel from './AdminPanel';
 import ApprovalDashboard from './ApprovalDashboard';
 import ExportModal from './ExportModal';
+import ForcePasswordChangeModal from './ForcePasswordChangeModal';
 import { useToast } from './ToastProvider';
 
 // Helper to fix Leaflet marker icons in Next.js
@@ -53,6 +54,22 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   const [activeTab, setActiveTab] = useState<'layers' | 'metadata'>('layers');
   const [featureTab, setFeatureTab] = useState<'details' | 'lineage' | 'history'>('details');
   const [zoomLevel, setZoomLevel] = useState<number>(15);
+
+  // Security: the authenticated account must change its password before editing (admin reset flow)
+  const [forceChangeRequired, setForceChangeRequired] = useState<boolean>(false);
+  const [showForcedChange, setShowForcedChange] = useState<boolean>(false);
+
+  // Attribute (non-geometry) editing state for the selected feature
+  const [attributeDraft, setAttributeDraft] = useState<{ [key: string]: any } | null>(null);
+  const [savingAttributes, setSavingAttributes] = useState<boolean>(false);
+
+  // New-feature creation mode state (builds a geometry from map clicks like the measure tool)
+  const [createMode, setCreateMode] = useState<boolean>(false);
+  const [createLayer, setCreateLayer] = useState<string>('buildings');
+  const [createVertexCount, setCreateVertexCount] = useState<number>(0);
+
+  // Fiber service providers present in the currently loaded fiber data (dynamic legend)
+  const [fiberProviders, setFiberProviders] = useState<string[]>([]);
 
   // Latest published orthophoto tile package URL (per imagery session)
   const [orthoTilesUrl, setOrthoTilesUrl] = useState<string | null>(null);
@@ -98,6 +115,15 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   const editMarkersRef = useRef<L.Marker[]>([]);
   const editPolylineRef = useRef<L.Polyline | L.Polygon | null>(null);
 
+  // Mirror of isEditing for use inside the mount-time map click handler
+  const editingRef = useRef<boolean>(false);
+
+  // New-feature creation refs
+  const createModeRef = useRef<boolean>(false);
+  const createPointsRef = useRef<L.LatLng[]>([]);
+  const createLayerRef = useRef<L.LayerGroup | null>(null);
+  const createLineRef = useRef<L.Polyline | L.Polygon | null>(null);
+
   // Haversine great-circle distance between two coordinates (meters)
   const haversineMeters = (a: L.LatLng, b: L.LatLng) => {
     const R = 6371000;
@@ -132,6 +158,69 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
 
   const formatArea = (m2: number) =>
     m2 >= 10000 ? `${(m2 / 10000).toFixed(3)} ha` : `${Math.round(m2)} m²`;
+
+  // Geometry kind of each layer, used to decide the minimum vertices for new features
+  const LAYER_GEOMETRY_KIND: Record<string, 'point' | 'line' | 'polygon'> = {
+    facilities: 'point',
+    street_lights: 'point', water_nodes: 'point', manholes: 'point',
+    sewer_junctions: 'point', electrical_nodes: 'point', fiber_nodes: 'point',
+    roads: 'line', water_lines: 'line', sewer_lines: 'line',
+    electrical_lines: 'line', fiber_lines: 'line',
+    buildings: 'polygon', land_use: 'polygon'
+  };
+
+  const LAYER_LABELS: Record<string, string> = {
+    buildings: 'Buildings (Polygon)', roads: 'Roads (Line)', land_use: 'Land Use Zones (Polygon)',
+    facilities: 'Public Facilities (Point)', street_lights: 'Street Lights (Point)',
+    water_lines: 'Water Pipes (Line)', water_nodes: 'Water Valves (Point)',
+    sewer_lines: 'Sewer Gravity (Line)', manholes: 'Sewer Manholes (Point)',
+    sewer_junctions: 'Sewer Junctions (Point)', electrical_lines: 'Power Cables (Line)',
+    electrical_nodes: 'Distribution Box (Point)', fiber_lines: 'Fiber Cables (Line)',
+    fiber_nodes: 'Fiber Cabinets (Point)'
+  };
+
+  const ASSET_POINT_COLORS: Record<string, string> = {
+    street_lights: '#fbbf24', water_nodes: '#3b82f6', manholes: '#8b5cf6',
+    sewer_junctions: '#c084fc', electrical_nodes: '#ef4444', fiber_nodes: '#10b981'
+  };
+
+  const ASSET_LINE_COLORS: Record<string, string> = {
+    water_lines: '#3b82f6', sewer_lines: '#8b5cf6', electrical_lines: '#ef4444', fiber_lines: '#10b981'
+  };
+
+  // System/derived fields that must not be edited inline
+  const ATTRIBUTE_EDIT_EXCLUDE = [
+    'id', 'geometry', 'addresses_list', 'asset_code', 'created_by', 'created_by_name',
+    'addresses_count', 'source_file', 'survey_date', 'accuracy', 'status', 'category',
+    'created_at', 'updated_at'
+  ];
+
+  // Distance from point p to segment (a, b)
+  const pointToSegmentDist = (p: L.LatLng, a: L.LatLng, b: L.LatLng) => {
+    const dx = b.lng - a.lng, dy = b.lat - a.lat;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(p.lat - a.lat, p.lng - a.lng);
+    let t = ((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.lat - (a.lat + t * dy), p.lng - (a.lng + t * dx));
+  };
+
+  // Extract a human-readable message from a DRF-style error payload
+  const extractApiError = (data: any): string => {
+    if (!data) return 'Unknown error';
+    if (typeof data === 'string') return data;
+    if (typeof data.detail === 'string') return data.detail;
+    if (typeof data.error === 'string') return data.error;
+    if (typeof data === 'object') {
+      const vals = Object.values(data);
+      for (const v of vals) {
+        if (Array.isArray(v) && v.length > 0) return String(v[0]);
+        if (typeof v === 'string' && v) return v;
+        if (v && typeof v === 'object' && (v as any).message) return String((v as any).message);
+      }
+    }
+    return 'Request failed';
+  };
 
   const toggleMeasure = () => {
     if (measureModeRef.current) {
@@ -222,6 +311,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     // Track Zoom level
     map.on('zoomend', () => {
       setZoomLevel(map.getZoom());
+      syncRoadLabels();
     });
 
     // 1. Initialize Base Layers
@@ -276,6 +366,18 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
 
     // 5. Measurement tool click handler (active only when measureMode is on)
     map.on('click', (e: L.LeafletMouseEvent) => {
+      // Geometry edit mode: insert a new vertex (add-vertex) at the click point
+      if (editingRef.current && editPolylineRef.current) {
+        addVertexAtClick(e.latlng);
+        return;
+      }
+
+      // New-feature creation mode: place a vertex like the measure tool
+      if (createModeRef.current) {
+        placeCreateVertex(e.latlng);
+        return;
+      }
+
       if (!measureModeRef.current || !measureLayerRef.current) return;
       measurePointsRef.current.push(e.latlng);
 
@@ -354,6 +456,9 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
         }
       }
     });
+
+    // Re-apply zoom-aware road labels whenever the Roads layer is re-enabled
+    if (visibleLayers['roads']) syncRoadLabels();
   }, [visibleLayers]);
 
   // Fetch all GIS vectors from API endpoints
@@ -374,7 +479,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
       loadLayer('sewer_junctions', `${apiBaseUrl}/assets/sewer_junctions/`, assetPointStyle('#c084fc', 4));
       loadLayer('electrical_lines', `${apiBaseUrl}/assets/electrical_lines/`, utilityLineStyle('#ef4444'));
       loadLayer('electrical_nodes', `${apiBaseUrl}/assets/electrical_nodes/`, assetPointStyle('#ef4444'));
-      loadLayer('fiber_lines', `${apiBaseUrl}/assets/fiber_lines/`, utilityLineStyle('#10b981'));
+      loadLayer('fiber_lines', `${apiBaseUrl}/assets/fiber_lines/`, fiberProviderStyle);
       loadLayer('fiber_nodes', `${apiBaseUrl}/assets/fiber_nodes/`, assetPointStyle('#10b981'));
     } catch (err) {
       console.error("Error retrieving spatial data:", err);
@@ -417,7 +522,9 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
           onEachFeature: (feature, layer) => {
             // Bind popups
             layer.on('click', (e) => {
+              if (editingRef.current || createModeRef.current) return;
               L.DomEvent.stopPropagation(e);
+              setAttributeDraft(null);
               
               // Load linked addresses if building
               if (name === 'buildings') {
@@ -441,9 +548,34 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
                 (layer as any).setStyle(styleFunc(feature));
               }
             });
+
+            // Permanent, non-interactive road name labels (zoom-aware via syncRoadLabels)
+            if (name === 'roads') {
+              const roadName = feature?.properties?.road_name;
+              if (roadName && String(roadName).trim() && String(roadName).trim().toLowerCase() !== 'unnamed road') {
+                (layer as L.Path).bindTooltip(String(roadName).trim(), {
+                  permanent: true,
+                  direction: 'center',
+                  interactive: false,
+                  className: 'road-name-label'
+                });
+              }
+            }
           }
         }).addTo(layerGroup);
       });
+
+      // Track which fiber providers are present so the legend stays current
+      if (name === 'fiber_lines') {
+        const providers = new Set<string>();
+        features.forEach((item: any) => {
+          if (item.provider && String(item.provider).trim()) providers.add(String(item.provider).trim());
+        });
+        setFiberProviders([...providers].sort((a, b) => a.localeCompare(b)));
+      }
+
+      // Apply zoom-aware road labels after (re)loading the road layer
+      if (name === 'roads') syncRoadLabels();
     } catch (err) {
       console.error(`Failed to load layer ${name}:`, err);
     }
@@ -536,13 +668,65 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     dashArray: '3, 6'
   });
 
+  // Stable per-provider fiber colors (deterministic hash, no hard-coded provider list)
+  const FIBER_PROVIDER_PALETTE = [
+    '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6',
+    '#14b8a6', '#f97316', '#eab308', '#06b6d4', '#f43f5e'
+  ];
+  // Neutral style for unknown/null providers
+  const FIBER_PROVIDER_NEUTRAL = '#94a3b8';
+
+  const fiberProviderColor = (provider: string) => {
+    if (!provider) return FIBER_PROVIDER_NEUTRAL;
+    let hash = 0;
+    for (let i = 0; i < provider.length; i++) hash = (hash * 31 + provider.charCodeAt(i)) >>> 0;
+    return FIBER_PROVIDER_PALETTE[hash % FIBER_PROVIDER_PALETTE.length];
+  };
+
+  const fiberProviderStyle = (feature: any) => ({
+    color: fiberProviderColor(feature?.properties?.provider),
+    weight: 3,
+    opacity: 0.8,
+    dashArray: '3, 6'
+  });
+
+  // Zoom-aware road-name labeling. Below zoom 15 none; 15-16 main (asphalt) roads
+  // where practical; 17+ every named road. Do not label unnamed roads or fall back
+  // to asset codes.
+  const shouldShowRoadLabel = (feature: any, zoom: number) => {
+    const raw = feature?.properties?.road_name;
+    const name = raw != null ? String(raw).trim() : '';
+    if (!name || name.toLowerCase() === 'unnamed road') return false;
+    if (zoom < 15) return false;
+    if (zoom >= 17) return true;
+    return feature?.properties?.surface_type === 'Asphalt';
+  };
+
+  // Hide/show road name labels based on the current zoom level
+  const syncRoadLabels = () => {
+    const map = mapRef.current;
+    const group = layerGroupsRef.current['roads'];
+    if (!map || !group) return;
+    const zoom = map.getZoom();
+    group.eachLayer((layer: L.Layer) => {
+      const tooltip = (layer as any).getTooltip?.();
+      const feature = (layer as any).feature;
+      if (!tooltip || !feature) return;
+      if (shouldShowRoadLabel(feature, zoom)) {
+        if (!tooltip.isOpen()) (layer as any).openTooltip();
+      } else {
+        if (tooltip.isOpen()) (layer as any).closeTooltip();
+      }
+    });
+  };
+
   // Layer switches toggle handler
   const handleLayerToggle = (name: string) => {
     setVisibleLayers(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
   // Persist auth session to localStorage for cross-tab survival
-  const handleLoginSuccess = (tok: string, userRole: string) => {
+  const handleLoginSuccess = (tok: string, userRole: string, mustChange = false) => {
     setToken(tok);
     setRole(userRole);
     if (typeof window !== 'undefined') {
@@ -550,20 +734,54 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
       window.localStorage.setItem('webgis_role', userRole);
     }
     setShowLogin(false);
+    setForceChangeRequired(mustChange);
+    setShowForcedChange(mustChange);
   };
 
   const handleLogout = () => {
     setToken(null);
     setRole('Guest');
+    setForceChangeRequired(false);
+    setShowForcedChange(false);
+    setAttributeDraft(null);
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('webgis_token');
       window.localStorage.removeItem('webgis_role');
     }
   };
 
+  // Re-check the forced-password flag when a session is restored from localStorage
+  useEffect(() => {
+    if (!token || token === 'mocked_jwt_token_for_presentation_mode') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl}/auth/me/`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          handleLogout();
+          return;
+        }
+        const me = await res.json();
+        if (me.role) setRole(me.role);
+        if (me.must_change_password) {
+          setForceChangeRequired(true);
+          setShowForcedChange(true);
+        }
+      } catch (err) {
+        // Keep the session on transient network failures
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
   // Search result selector (centers and zooms map on item)
   const handleSelectSearchResult = (result: any) => {
     if (!mapRef.current || !result.geometry) return;
+    
+    setAttributeDraft(null);
     
     let coords: [number, number] = [0, 0];
     
@@ -585,10 +803,142 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     }
   };
 
+  // Apply an edited ring/line back onto the temporary edit overlay
+  const setEditPolylineLatLngs = (poly: L.Polyline | L.Polygon, latlngs: L.LatLng[]) => {
+    if (poly instanceof L.Polygon) poly.setLatLngs([latlngs]);
+    else poly.setLatLngs(latlngs);
+  };
+
+  // Add-vertex: insert a new vertex at the click point on the nearest segment
+  const addVertexAtClick = (latlng: L.LatLng) => {
+    const poly = editPolylineRef.current;
+    if (!poly) return;
+
+    let latlngs: L.LatLng[];
+    if (poly instanceof L.Polygon) latlngs = (poly.getLatLngs()[0] as L.LatLng[]).slice();
+    else latlngs = (poly.getLatLngs() as L.LatLng[]).slice();
+    if (latlngs.length < 2) return;
+
+    let bestIndex = latlngs.length;
+    let bestDist = Infinity;
+    for (let i = 0; i < latlngs.length - 1; i++) {
+      const d = pointToSegmentDist(latlng, latlngs[i], latlngs[i + 1]);
+      if (d < bestDist) { bestDist = d; bestIndex = i + 1; }
+    }
+    latlngs.splice(bestIndex, 0, latlng);
+    setEditPolylineLatLngs(poly, latlngs);
+
+    // Refresh drag handles for the updated vertex set
+    editMarkersRef.current.forEach(m => m.remove());
+    editMarkersRef.current = [];
+    latlngs.forEach((ll, i) => {
+      createVertexHandle(ll, i);
+    });
+  };
+
+  // New-feature creation helpers -------------------------------------------
+  const toggleCreate = () => {
+    if (createModeRef.current) {
+      clearCreate();
+      return;
+    }
+    if (editingRef.current) cancelEditing();
+    if (measureModeRef.current) clearMeasure();
+    setCreateMode(true);
+    createModeRef.current = true;
+    createLayerRef.current = L.layerGroup().addTo(mapRef.current!);
+    setCreateVertexCount(0);
+  };
+
+  const clearCreate = () => {
+    createModeRef.current = false;
+    setCreateMode(false);
+    createPointsRef.current = [];
+    setCreateVertexCount(0);
+    if (createLineRef.current) {
+      createLineRef.current.remove();
+      createLineRef.current = null;
+    }
+    if (createLayerRef.current) {
+      createLayerRef.current.remove();
+      createLayerRef.current = null;
+    }
+  };
+
+  const placeCreateVertex = (latlng: L.LatLng) => {
+    if (!createLayerRef.current) return;
+    createPointsRef.current.push(latlng);
+
+    L.circleMarker(latlng, {
+      radius: 5,
+      color: '#090d16',
+      weight: 1.5,
+      fillColor: '#34d399',
+      fillOpacity: 1
+    }).addTo(createLayerRef.current);
+
+    const pts = createPointsRef.current;
+    if (createLineRef.current) {
+      createLineRef.current.remove();
+      createLineRef.current = null;
+    }
+    if (pts.length >= 2) {
+      createLineRef.current = L.polyline(pts, {
+        color: '#34d399',
+        weight: 3,
+        dashArray: '6, 4'
+      }).addTo(createLayerRef.current);
+    }
+    setCreateVertexCount(pts.length);
+  };
+
+  const buildCreateGeometry = () => {
+    const pts = createPointsRef.current;
+    const kind = LAYER_GEOMETRY_KIND[createLayer] || 'point';
+    if (kind === 'point') {
+      const p = pts[0];
+      return { type: 'Point', coordinates: [p.lng, p.lat] };
+    }
+    if (kind === 'line') {
+      return { type: 'LineString', coordinates: pts.map(p => [p.lng, p.lat]) };
+    }
+    const ring = pts.map(p => [p.lng, p.lat]);
+    ring.push(ring[0]);
+    return { type: 'Polygon', coordinates: [ring] };
+  };
+
+  const saveNewFeature = async () => {
+    if (!createPointsRef.current.length) return;
+    const geometry = buildCreateGeometry();
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/${getLayerEndpoint(createLayer)}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ geometry })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(`Could not create feature: ${extractApiError(data)}`, 'error');
+        return;
+      }
+      toast(`Feature created (${data.asset_code || 'asset code assigned automatically'}).`, 'success');
+      clearCreate();
+      fetchData();
+    } catch (err) {
+      toast('Network error creating feature. No changes were applied.', 'error');
+    }
+  };
+
   // Custom vertex geometric editing handler
   const startEditingGeometry = () => {
     if (!selectedFeature || !mapRef.current) return;
     setIsEditing(true);
+    editingRef.current = true;
+    setAttributeDraft(null);
     
     const layer = selectedFeature.leafletLayer;
     if (!layer) return;
@@ -715,54 +1065,44 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     const layerName = selectedFeature.layerName;
     const featureId = selectedFeature.data.id;
 
-    // Send PUT request to staging/update backend endpoint
+    // Send PATCH to the production layer endpoint
     try {
-      const tokenToUse = token || 'dummy_token'; // If auth is mocked
       const res = await fetch(`${apiBaseUrl}/${getLayerEndpoint(layerName)}/${featureId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenToUse}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           geometry: updatedGeom
         })
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(`Save failed: ${extractApiError(data)}`, 'error');
+        return;
+      }
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      
-      toast("Geometry updated successfully in draft!", 'success');
-      cancelEditing();
-      fetchData(); // Reload map vector layers
-    } catch (err) {
-      // Mock local success state for demo since real POST requires backend
-      console.warn("API unavailable, updating locally for presentation.", err);
-      toast("Geometry updated successfully (Local Simulation Mode)!", 'success');
-      
-      // Update selected state locally
-      setSelectedFeature((prev: any) => ({
-        ...prev,
-        data: {
-          ...prev.data,
-          geometry: updatedGeom
-        }
-      }));
-      cancelEditing();
-      
-      // Reflect changes locally in the leafletLayer on map
+      // Reflect the new geometry on the live map layer without a full reload
       const originalLayer = selectedFeature.leafletLayer;
       if (originalLayer && originalLayer.setLatLngs) {
-        if (poly instanceof L.Polygon) {
-          originalLayer.setLatLngs(poly.getLatLngs());
-        } else {
-          originalLayer.setLatLngs(poly.getLatLngs());
-        }
+        if (poly instanceof L.Polygon) originalLayer.setLatLngs(poly.getLatLngs());
+        else originalLayer.setLatLngs(poly.getLatLngs());
       }
+
+      setSelectedFeature((prev: any) => prev ? { ...prev, data: { ...prev.data, ...data, geometry: data.geometry ?? updatedGeom } } : prev);
+      refreshLayerStyle(layerName, data);
+
+      toast("Geometry updated successfully.", 'success');
+      cancelEditing();
+    } catch (err) {
+      toast('Network error saving geometry. No changes were applied.', 'error');
     }
   };
 
   const cancelEditing = () => {
     setIsEditing(false);
+    editingRef.current = false;
     
     // Show original layer again
     const originalLayer = selectedFeature?.leafletLayer;
@@ -781,37 +1121,109 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
 
   const deleteFeature = async () => {
     if (!selectedFeature) return;
-    const ok = await confirm("Are you sure you want to flag this asset as INACTIVE? This acts as a soft-delete draft requiring admin merge.");
+    const ok = await confirm("Mark this feature as INACTIVE? It will disappear from the public map until a council review restores it.");
     if (!ok) return;
 
     const layerName = selectedFeature.layerName;
     const featureId = selectedFeature.data.id;
 
     try {
-      const tokenToUse = token || 'dummy_token';
       const res = await fetch(`${apiBaseUrl}/${getLayerEndpoint(layerName)}/${featureId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenToUse}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ status: 'INACTIVE' })
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(`Could not deactivate feature: ${extractApiError(data)}`, 'error');
+        return;
+      }
 
-      if (!res.ok) throw new Error();
-      toast("Asset marked as INACTIVE.", 'success');
+      toast("Feature marked as INACTIVE.", 'success');
+      const originalLayer = selectedFeature.leafletLayer;
+      if (originalLayer && mapRef.current) originalLayer.remove();
+      cancelEditing();
+      setAttributeDraft(null);
       setSelectedFeature(null);
       fetchData();
     } catch (err) {
-      console.warn("Mocking soft delete locally", err);
-      toast("Asset marked as INACTIVE (Local Simulation Mode)!", 'success');
-      
-      // Remove layer representation on map
-      const originalLayer = selectedFeature.leafletLayer;
-      if (originalLayer && mapRef.current) {
-        originalLayer.remove();
+      toast('Network error deactivating feature. No changes were applied.', 'error');
+    }
+  };
+
+  // Re-apply a layer's visual style after an attribute save changes its properties
+  const refreshLayerStyle = (layerName: string, data: any) => {
+    const layer = selectedFeature?.leafletLayer;
+    if (!layer || !('setStyle' in layer)) return;
+
+    const props = { properties: data };
+    let style: any = null;
+    switch (layerName) {
+      case 'roads': style = roadStyle(props); break;
+      case 'buildings': style = buildingStyle(props); break;
+      case 'land_use': style = landUseStyle(props); break;
+      case 'fiber_lines': style = fiberProviderStyle(props); break;
+      default:
+        if (ASSET_LINE_COLORS[layerName]) style = utilityLineStyle(ASSET_LINE_COLORS[layerName])();
+        else if (ASSET_POINT_COLORS[layerName]) style = assetPointStyle(ASSET_POINT_COLORS[layerName])();
+    }
+    if (style) (layer as any).setStyle(style);
+  };
+
+  // --- Attribute (non-geometry) editing ---
+  const startAttributeEditing = () => {
+    if (!selectedFeature) return;
+    if (editingRef.current) cancelEditing();
+    const draft: { [key: string]: any } = {};
+    Object.keys(selectedFeature.data).forEach((key) => {
+      if (ATTRIBUTE_EDIT_EXCLUDE.includes(key)) return;
+      const v = selectedFeature.data[key];
+      if (v === null || v === undefined || typeof v === 'object') return;
+      draft[key] = v;
+    });
+    setAttributeDraft(draft);
+  };
+
+  const saveAttributes = async () => {
+    if (!selectedFeature || !attributeDraft) return;
+    setSavingAttributes(true);
+
+    const layerName = selectedFeature.layerName;
+    const featureId = selectedFeature.data.id;
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/${getLayerEndpoint(layerName)}/${featureId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(attributeDraft)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(`Save failed: ${extractApiError(data)}`, 'error');
+        setSavingAttributes(false);
+        return;
       }
-      setSelectedFeature(null);
+
+      const merged = { ...selectedFeature.data, ...data };
+      const originalLayer = selectedFeature.leafletLayer;
+      if (originalLayer && originalLayer.feature) {
+        originalLayer.feature.properties = { ...originalLayer.feature.properties, ...data };
+      }
+      setSelectedFeature((prev: any) => prev ? { ...prev, data: merged } : prev);
+      refreshLayerStyle(layerName, merged);
+
+      toast("Feature attributes updated.", 'success');
+      setAttributeDraft(null);
+      setSavingAttributes(false);
+    } catch (err) {
+      toast('Network error saving attributes. No changes were applied.', 'error');
+      setSavingAttributes(false);
     }
   };
 
@@ -862,6 +1274,22 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
             >
               <Database className="w-3.5 h-3.5" />
               <span>Survey Ingestion</span>
+            </button>
+          )}
+
+          {/* New Feature Tool (Requires write access) */}
+          {['Section Admin', 'Super Admin'].includes(role) && !forceChangeRequired && (
+            <button 
+              onClick={toggleCreate}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border shadow-md text-xs font-medium cursor-pointer transition-all ${
+                createMode
+                  ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400'
+                  : 'bg-slate-950/80 hover:bg-slate-900 border-white/10 hover:border-white/20 text-slate-200'
+              }`}
+              title="Create a new feature on the map (geometry only; asset code is assigned automatically)"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{createMode ? 'Creating…' : 'New Feature'}</span>
             </button>
           )}
 
@@ -950,6 +1378,56 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
                 </button>
                 <button
                   onClick={clearMeasure}
+                  className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-slate-300 flex items-center justify-center gap-1 cursor-pointer transition-all"
+                >
+                  <Eraser className="w-3 h-3" />
+                  <span>Clear Points</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* New Feature Creation HUD */}
+        {createMode && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[999] w-[340px] glass-panel border border-emerald-500/30 shadow-xl rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-slate-900/50">
+              <span className="text-[10px] font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> New Feature
+              </span>
+              <button
+                onClick={clearCreate}
+                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                title="Cancel creation"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="p-3 space-y-2">
+              <select
+                value={createLayer}
+                onChange={(e) => setCreateLayer(e.target.value)}
+                className="w-full px-2.5 py-2 bg-slate-950 border border-white/10 focus:border-emerald-400 focus:outline-none rounded-lg text-xs text-slate-200 cursor-pointer"
+              >
+                {Object.keys(LAYER_LABELS).map((name) => (
+                  <option key={name} value={name} className="bg-slate-950">{LAYER_LABELS[name]}</option>
+                ))}
+              </select>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Click the map to place vertices.</span>
+                <span className="font-mono text-emerald-400 font-bold">{createVertexCount} pts</span>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={saveNewFeature}
+                  disabled={createVertexCount < (LAYER_GEOMETRY_KIND[createLayer] === 'point' ? 1 : LAYER_GEOMETRY_KIND[createLayer] === 'line' ? 2 : 3)}
+                  className="flex-1 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 disabled:opacity-40 text-[10px] font-bold text-emerald-400 flex items-center justify-center gap-1 cursor-pointer disabled:cursor-not-allowed transition-all"
+                >
+                  <Save className="w-3 h-3" />
+                  <span>Create Feature</span>
+                </button>
+                <button
+                  onClick={clearCreate}
                   className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-slate-300 flex items-center justify-center gap-1 cursor-pointer transition-all"
                 >
                   <Eraser className="w-3 h-3" />
@@ -1066,6 +1544,19 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
                   </label>
                 ))}
               </div>
+
+              {/* Dynamic Fiber Provider Legend (only providers present in loaded data) */}
+              {visibleLayers.fiber_lines && fiberProviders.length > 0 && (
+                <div className="mt-2 pl-2 space-y-1.5 border-l border-white/10">
+                  <span className="text-[9px] font-bold tracking-wider text-slate-500 uppercase">Fiber Providers</span>
+                  {fiberProviders.map(provider => (
+                    <div key={provider} className="flex items-center gap-2 text-[10px] font-medium text-slate-300">
+                      <span className="w-4 h-0.5 rounded-full shrink-0" style={{ background: fiberProviderColor(provider) }} />
+                      <span className="uppercase">{provider}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>
@@ -1113,7 +1604,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
               <h2 className="text-sm font-bold text-slate-100 font-mono">{selectedFeature.data.asset_code || 'No Asset Code'}</h2>
             </div>
             <button 
-              onClick={() => { cancelEditing(); setSelectedFeature(null); }}
+              onClick={() => { cancelEditing(); setAttributeDraft(null); setSelectedFeature(null); }}
               className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -1141,24 +1632,70 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
             {/* Core attributes list */}
             <div className="space-y-2">
               <h3 className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">Attributes</h3>
-              <div className="bg-slate-950/40 border border-white/5 rounded-lg p-3 space-y-2 text-xs">
-                {Object.keys(selectedFeature.data).map(key => {
-                  // Skip system objects, geometry, and lists
-                  if (['id', 'geometry', 'addresses_list', 'asset_code', 'created_by', 'status'].includes(key)) return null;
-                  
-                  // Label formatting
-                  const label = key.replace('_', ' ').replace('id', 'ID');
-                  let val = selectedFeature.data[key];
-                  if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
-                  
-                  return (
-                    <div key={key} className="flex justify-between border-b border-white/5 pb-1.5 last:border-0 last:pb-0">
-                      <span className="text-slate-400 capitalize">{label}:</span>
-                      <span className="font-semibold text-slate-200 font-mono">{val || '-'}</span>
+              {attributeDraft ? (
+                <div className="bg-slate-950/40 border border-amber-500/20 rounded-lg p-3 space-y-2.5 text-xs">
+                  {Object.keys(attributeDraft).length === 0 && (
+                    <p className="text-[10px] text-slate-500 italic">No editable attributes on this feature.</p>
+                  )}
+                  {Object.keys(attributeDraft).map(key => (
+                    <div key={key} className="space-y-1">
+                      <span className="text-[10px] text-slate-400 capitalize">{key.replace('_', ' ').replace('id', 'ID')}</span>
+                      {typeof selectedFeature.data[key] === 'boolean' ? (
+                        <select
+                          value={attributeDraft[key] ? 'true' : 'false'}
+                          onChange={(e) => setAttributeDraft((prev: any) => ({ ...prev, [key]: e.target.value === 'true' }))}
+                          className="w-full px-2 py-1.5 bg-slate-900 border border-white/10 focus:border-amber-400 focus:outline-none rounded text-xs text-slate-200 cursor-pointer"
+                        >
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      ) : (
+                        <input
+                          type={typeof selectedFeature.data[key] === 'number' ? 'number' : 'text'}
+                          value={attributeDraft[key] ?? ''}
+                          onChange={(e) => setAttributeDraft((prev: any) => ({ ...prev, [key]: e.target.value }))}
+                          className="w-full px-2 py-1.5 bg-slate-900 border border-white/10 focus:border-amber-400 focus:outline-none rounded text-xs text-slate-200"
+                        />
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={saveAttributes}
+                      disabled={savingAttributes}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-amber-700 text-slate-950 text-[10px] font-bold cursor-pointer disabled:cursor-not-allowed transition-all"
+                    >
+                      <Save className="w-3 h-3" />
+                      {savingAttributes ? 'Saving…' : 'Save Attributes'}
+                    </button>
+                    <button
+                      onClick={() => setAttributeDraft(null)}
+                      className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-slate-300 cursor-pointer transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-slate-950/40 border border-white/5 rounded-lg p-3 space-y-2 text-xs">
+                  {Object.keys(selectedFeature.data).map(key => {
+                    // Skip system objects, geometry, and lists
+                    if (['id', 'geometry', 'addresses_list', 'asset_code', 'created_by', 'status'].includes(key)) return null;
+                    
+                    // Label formatting
+                    const label = key.replace('_', ' ').replace('id', 'ID');
+                    let val = selectedFeature.data[key];
+                    if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+                    
+                    return (
+                      <div key={key} className="flex justify-between border-b border-white/5 pb-1.5 last:border-0 last:pb-0">
+                        <span className="text-slate-400 capitalize">{label}:</span>
+                        <span className="font-semibold text-slate-200 font-mono">{val || '-'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Address Registry Tabular section for Buildings */}
@@ -1266,13 +1803,24 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
             <div className="p-4 border-t border-white/10 bg-slate-900/40 flex items-center gap-2">
               {!isEditing ? (
                 <>
-                  {['Section Admin', 'Super Admin'].includes(role) && (
+                  {['Section Admin', 'Super Admin'].includes(role) && !forceChangeRequired && (
                     <button 
                       onClick={startEditingGeometry}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 text-xs font-semibold text-amber-400 cursor-pointer transition-all"
                     >
                       <Edit className="w-3.5 h-3.5" />
                       <span>Edit Shape</span>
+                    </button>
+                  )}
+                  {['Section Admin', 'Super Admin'].includes(role) && (
+                    <button 
+                      onClick={() => attributeDraft ? setAttributeDraft(null) : startAttributeEditing()}
+                      className={`flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${
+                        attributeDraft ? 'bg-amber-500/15 border-amber-500/40 text-amber-400' : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+                      }`}
+                      title={attributeDraft ? 'Cancel attribute editing' : 'Edit feature attributes'}
+                    >
+                      <Edit className="w-4 h-4" />
                     </button>
                   )}
                   {['Super Admin'].includes(role) && (
@@ -1314,6 +1862,23 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
           apiBaseUrl={apiBaseUrl} 
           onClose={() => setShowLogin(false)} 
           onLoginSuccess={handleLoginSuccess} 
+        />
+      )}
+
+      {/* Forced password change overlay (blocking until changed or logged out) */}
+      {showForcedChange && token && forceChangeRequired && (
+        <ForcePasswordChangeModal
+          apiBaseUrl={apiBaseUrl}
+          token={token}
+          onSuccess={() => {
+            setForceChangeRequired(false);
+            setShowForcedChange(false);
+            toast('Password changed. You can now edit the map.', 'success');
+          }}
+          onLogout={() => {
+            handleLogout();
+            toast('Logged out. Sign in again with your new password.', 'info');
+          }}
         />
       )}
 

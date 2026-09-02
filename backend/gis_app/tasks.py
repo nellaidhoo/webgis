@@ -228,6 +228,19 @@ def parse_dxf(file_path, session, log_fn):
         # Default: return None (will be uncategorized)
         return None
     
+    def parse_fiber_provider(layer_name):
+        """
+        Derive the fiber service provider from the DXF layer-name suffix.
+        Layers are named FIBER_LINE or FIBER_LINE_<PROVIDER> (e.g. FIBER_LINE_RAE).
+        Unknown/absent providers return '' so the map uses a neutral style.
+        """
+        name = (layer_name or '').strip()
+        if name.upper().startswith('FIBER_LINE'):
+            suffix = name[len('FIBER_LINE'):]
+        else:
+            suffix = name
+        return suffix.strip(' _-')[:100]
+
     def find_nearest_text(geom, max_distance=3.0):
         """Helper to find text labels within threshold of geometry"""
         try:
@@ -484,6 +497,7 @@ def parse_dxf(file_path, session, log_fn):
                     StagingFiberLine.objects.create(
                         session=session,
                         asset_code=gen_code('FLINE'),
+                        provider=parse_fiber_provider(layer),
                         core_count=24,
                         geometry=geom_final,
                         source_file=os.path.basename(file_path)

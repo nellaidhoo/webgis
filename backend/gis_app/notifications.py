@@ -72,3 +72,26 @@ def notify_registration_rejected(user, reason=""):
             )
         except Exception as e:
             logger.warning(f"Failed to send rejection email to {user.username}: {e}")
+
+
+def notify_password_reset(user, temp_password):
+    """Notify user that an admin reset their password and issue the temp code."""
+    subject = "Your WebGIS Password Has Been Reset"
+    message = (
+        f"Dear {user.get_full_name() or user.username},\n\n"
+        f"An administrator has reset your password.\n"
+        f"Temporary password: {temp_password}\n\n"
+        f"Please log in again and you will be required to choose a new password.\n\n"
+        f"If you believe this is an error, please contact your administrator.\n\n"
+        f"Best regards,\nWebGIS Team"
+    )
+    if user.email:
+        try:
+            send_mail(
+                subject, message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send password reset email to {user.username}: {e}")

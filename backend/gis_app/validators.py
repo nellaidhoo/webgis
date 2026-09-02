@@ -81,14 +81,14 @@ class AssetCodeValidator:
     """Validate asset code formats."""
     
     PATTERNS = {
-        'road': r'^R-[A-Z0-9-]+$',
-        'building': r'^B-[A-Z0-9-]+$',
-        'facility': r'^F-[A-Z0-9-]+$',
+        'road': r'^(R|ROAD)-[A-Z0-9-]+$',
+        'building': r'^(B|BLDG)-[A-Z0-9-]+$',
+        'facility': r'^(F|FAC)-[A-Z0-9-]+$',
         'street_light': r'^SL-[A-Z0-9-]+$',
-        'water_line': r'^WL-[A-Z0-9-]+$',
-        'sewer_line': r'^SW-[A-Z0-9-]+$',
-        'electrical_line': r'^EL-[A-Z0-9-]+$',
-        'fiber_line': r'^FL-[A-Z0-9-]+$',
+        'water_line': r'^(WL|WLINE)-[A-Z0-9-]+$',
+        'sewer_line': r'^(SW|SLINE)-[A-Z0-9-]+$',
+        'electrical_line': r'^(EL|ELINE)-[A-Z0-9-]+$',
+        'fiber_line': r'^(FL|FLINE)-[A-Z0-9-]+$',
     }
     
     def validate(self, asset_code, asset_type):
@@ -152,6 +152,36 @@ class DataValidator:
         if facility.asset_code:
             errors.extend(self.asset_code_validator.validate(facility.asset_code, 'facility'))
         
+        return errors
+
+    def _validate_geometry_generic(self, geom):
+        """Dispatch to the geometry validator by geometry type."""
+        if geom is None:
+            return []
+        geom_type = getattr(geom, 'geom_type', '')
+        if geom_type in ('Polygon', 'MultiPolygon'):
+            return self.geometry_validator.validate_polygon(geom, 'geometry')
+        if geom_type in ('LineString', 'MultiLineString'):
+            return self.geometry_validator.validate_linestring(geom, 'geometry')
+        if geom_type in ('Point', 'MultiPoint'):
+            return self.geometry_validator.validate_point(geom, 'geometry')
+        return []
+
+    def validate_feature(self, feature, asset_type=None):
+        """
+        Validate a single (staged or production) feature generically.
+        Works for every layer: uses the query-set geometry type to pick the
+        right geometry rules and validates the asset code when a pattern
+        exists for `asset_type`.
+        """
+        errors = []
+        geom = getattr(feature, 'geometry', None)
+        if geom is not None:
+            errors.extend(self._validate_geometry_generic(geom))
+            errors.extend(self.geometry_validator.validate_coordinates_in_maldives(geom))
+        asset_code = getattr(feature, 'asset_code', None)
+        if asset_code and asset_type:
+            errors.extend(self.asset_code_validator.validate(asset_code, asset_type))
         return errors
 
 

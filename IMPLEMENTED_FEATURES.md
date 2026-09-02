@@ -14,7 +14,8 @@ production server (`192.168.150.33`) and local dev workstation.
 | Sprint 2 | User registration, approval workflow, rate limiting, admin bulk actions | ✅ Complete |
 | Sprint 3 | Survey ingestion: upload wizard, precheck, session grouping, staged preview, lineage/history | ✅ Complete |
 | Sprint 4 | Data export (backend API + frontend UI) | ✅ Complete |
-| Sprint 5 | Security & data governance: layer visibility, export gating, public read-only portal, lineage | 🔄 Implemented (pending deploy) |
+| Sprint 5 | Security & data governance: layer visibility, export gating, public read-only portal, lineage | ✅ Complete |
+| Sprint 6 | Validation reports, in-app feature editing, write-path audits, password reset/forced change, fiber provider coloring, zoom-aware road labels | ✅ Complete |
 
 ---
 
@@ -188,7 +189,64 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 7. Legacy / Base Features (pre-sprint, retained)
+## 7. Sprint 6 — Validation, In-App Editing & Auth Hygiene
+
+### 7.1 Survey Validation Reports
+- `SurveyValidationReport` model (per survey session: total / critical / warning counts + messages),
+  migration **0009**. Validation runs against staged data after async parse; results surfaced in the
+  approval dashboard so operators see geometry/attribute problems before approval.
+
+### 7.2 Write-path hardening & audit
+- `GeometrySerializerField` — strict GeoJSON geometry validation on every create/update path; the
+  feature-creation flow is supported by model relaxations (migration **0010**).
+- `LayerWriteAuditMixin` on all 14 layer viewsets — every create / update / delete writes an
+  `AuditLog` entry (who, what, when). User model additions in migration **0011**.
+- `gis_app/validators.py` — reusable validation helpers used by both the report generator and the
+  import service.
+
+### 7.3 In-app feature editing (MapViewer)
+- **Edit shape:** move existing vertices; **add vertex** mid-segment at click. **Edit attributes** via
+  the Feature Details panel (Section Admin+). **Delete** (Super Admin). **Create new features** by
+  drawing geometry on the map with a dedicated toolbar + create HUD.
+- All mutations are real server-side writes (`PUT`/`POST`/`DELETE`) with JWT auth — no client-side
+  "Local Simulation" fallback; errors surfaced via toast.
+- Editing / creating / measuring are guarded so they never conflict with feature selection.
+
+### 7.4 Password reset + forced change
+- `AdminResetPasswordView` (staff) resets any user's password; `ChangePasswordView` (self-service)
+  requires `current_password` / `new_password` / `confirm_password`.
+- `UserAccountProfile(must_change_password, password_changed_at)`; `/api/auth/me/` exposes both;
+  council-staff first-login flow marks the flag and the new `ForcePasswordChangeModal` blocks the map
+  until the password is changed. AdminPanel login flows pass the flag through.
+
+### 7.5 Fiber provider coloring
+- `provider` free-text `CharField` (deliberately **no enum** — provider set is still evolving) on
+  `FiberLine` + `StagingFiberLine`, migration **0012**; derived during DXF staging by
+  `parse_fiber_provider` from the layer suffix `FIBER_LINE_<PROVIDER>` (bare `FIBER_LINE` → `''`).
+- Deterministic, stable per-provider colors (`fiberProviderColor`, hash → palette, so a provider is
+  always the same color across reloads); neutral gray `#94a3b8` for missing/unknown providers.
+- Dynamic legend listing only providers present in currently loaded fiber data, gated on the fiber
+  layer being visible.
+
+### 7.6 Zoom-aware road labels
+- Permanent, non-interactive `road_name` tooltips with a text halo for readability over orthophotos.
+  Labels **never** fall back to `asset_code`; blank / "Unnamed Road" names are skipped.
+- Zoom rules: `<15` none; `15–16` named asphalt roads; `17+` all named roads. Labels follow the
+  Roads layer visibility toggle and re-sync on zoom changes.
+
+### 7.7 Verification (S6)
+- `manage.py check` + `py_compile` clean; migrations **0009–0012** applied.
+- Local stack harness **49/49 PASS**, incl. a fiber staging→approve→production round-trip that
+  verified provider persistence; node-replicated checks confirmed deterministic provider colors and
+  label zoom rules; `npx tsc --noEmit` + `next build` clean.
+- **Operational finding (recorded):** after migrations that change task/model schemas, all Celery
+  workers must be **restarted before** processing new jobs. A stale worker (pre-migration code)
+  failed a `stagingfiberline` insert; `transaction.atomic()` correctly rolled the whole staged
+  session back — a positive outcome (no partial import), not an implementation defect.
+
+---
+
+## 8. Legacy / Base Features (pre-sprint, retained)
 
 - **Vector tile serving** (`/api/tiles/<layer>/<z>/<x>/<y>/`) for fast map rendering.
 - **Combined trigram + proximity search** (`/api/search/`).
@@ -199,9 +257,9 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 8. Verification & Tooling
+## 9. Verification & Tooling
 
-- **Harness e2e:** `webgis-stack/harness.py` — full lifecycle test (login → upload → parse → approve → verify production → export) currently **39/39 PASS**.
+- **Harness e2e:** `webgis-stack/harness.py` — full lifecycle test (login → upload → parse → approve → verify production → export) currently **49/49 PASS** (local).
 - **Frontend:** `npx tsc --noEmit` clean; `npm run build` clean (local + server).
 - **Backend:** `manage.py check` clean.
 - **Deployment:** `pscp` → `/tmp/`, sudo-copy + `chown webgis:webgis`, `systemctl restart <unit>`; frontend rebuilt on server then restarted.
@@ -209,8 +267,10 @@ Central registry of every GIS layer. Defaults:
 
 ---
 
-## 9. Known Notes / Decisions
+## 10. Known Notes / Decisions
 
 - **Global DRF pagination is intentionally disabled** — MapViewer loads all features via `data.results || data`; pagination is scoped **only** to `SurveySessionViewSet`.
 - **`created_by_name` must be declared in the serializer class body** (not inherited via mixin) due to DRF metaclass behavior.
 - **Staged export is not yet a backend endpoint** — the Export button exports production layers. A staged-export endpoint (`/api/survey-sessions/{id}/export/`) would be a future enhancement.
+- **Celery worker lifecycle:** after applying migrations that change task/model schemas, ALL workers (`webgis-worker`, local `run_worker.cmd`) must be restarted before processing new jobs. `transaction.atomic()` in merge/staging protects against partial imports if a stale worker misbehaves — keep that rollback behavior when editing those tasks.
+- **`FIBER_LINE_<PROVIDER>` layer suffixes** are the only import-side source of fiber provider names; bare `FIBER_LINE` imports as empty provider (neutral gray on the map). "Unnamed Road" defaults in staging are an import/data policy, not a label bug — changing its behavior is a deliberate data-decision change, out of scope.

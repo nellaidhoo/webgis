@@ -6,7 +6,7 @@ import { X, Shield, Lock, User, AlertCircle, Play, UserPlus, LogIn, Mail } from 
 interface AdminPanelProps {
   apiBaseUrl: string;
   onClose: () => void;
-  onLoginSuccess: (token: string, role: string) => void;
+  onLoginSuccess: (token: string, role: string, mustChangePassword?: boolean) => void;
 }
 
 export default function AdminPanel({ apiBaseUrl, onClose, onLoginSuccess }: AdminPanelProps) {
@@ -33,13 +33,13 @@ export default function AdminPanel({ apiBaseUrl, onClose, onLoginSuccess }: Admi
       });
       if (res.ok) {
         const data = await res.json();
-        onLoginSuccess(token, data.role || fallbackRole);
+        onLoginSuccess(token, data.role || fallbackRole, !!data.must_change_password);
         return;
       }
     } catch (err) {
       console.warn("Could not fetch user profile, using fallback role.", err);
     }
-    onLoginSuccess(token, fallbackRole);
+    onLoginSuccess(token, fallbackRole, false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
