@@ -2,6 +2,9 @@
 
 A production-grade municipal GIS platform designed for island-level mapping, daily survey ingestion, precise spatial measurements, and strict data lineage auditing. Runs directly on a Linux server/VPS (no Docker) with PostgreSQL/PostGIS, Redis, nginx, and systemd managing the application services.
 
+> **Deployment:** for the complete, verified Linux/Ubuntu server runbook see
+> [`DEPLOYMENT.md`](DEPLOYMENT.md) (supersedes the condensed steps below).
+
 ## Architecture & Layout
 
 ```
@@ -125,7 +128,7 @@ sudo -u webgis .venv/bin/python manage.py collectstatic --noinput
 sudo -u webgis .venv/bin/python manage.py seed_data
 ```
 
-`collectstatic` copies Django admin assets to `/opt/webgis/backend/static`, which nginx serves at `/static/` so the admin console at `/admin/` renders correctly.
+`collectstatic` copies Django admin assets to `/opt/webgis/backend/staticfiles` (nginx `location /static/`), so the admin console at `/admin/` renders correctly.
 
 ### 8. Install systemd Services
 
