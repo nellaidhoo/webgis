@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, FileJson, FileSpreadsheet, FolderArchive, X, Loader2 } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, FolderArchive, X, Loader2, MapPin } from 'lucide-react';
 import { useToast } from './ToastProvider';
 
 interface ExportModalProps {
   apiBaseUrl: string;
   isOpen: boolean;
   onClose: () => void;
-  layer?: string;
+  initialLayer?: string;
   bbox?: string;
 }
 
@@ -18,13 +18,24 @@ const FORMATS = [
   { value: 'shapefile', label: 'Shapefile', hint: '.zip', icon: FolderArchive },
 ];
 
+// Layers explicitly marked is_exportable in the LayerRegistry (roads, buildings,
+// facilities, land_use). The backend rejects any other layer with 403, so the
+// picker only offers what the export API will actually serve.
+const EXPORTABLE_LAYERS = [
+  { key: 'roads', label: 'Roads' },
+  { key: 'buildings', label: 'Buildings' },
+  { key: 'facilities', label: 'Facilities' },
+  { key: 'land_use', label: 'Land Use' },
+];
+
 function formatLayer(layer: string): string {
   return layer.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function ExportModal({ apiBaseUrl, isOpen, onClose, layer = 'all', bbox }: ExportModalProps) {
+export default function ExportModal({ apiBaseUrl, isOpen, onClose, initialLayer = 'roads', bbox }: ExportModalProps) {
   const { toast } = useToast();
   const [format, setFormat] = useState('geojson');
+  const [layer, setLayer] = useState(EXPORTABLE_LAYERS.some((o) => o.key === initialLayer) ? initialLayer : 'roads');
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,8 +48,7 @@ export default function ExportModal({ apiBaseUrl, isOpen, onClose, layer = 'all'
     const params = new URLSearchParams({ export_format: format });
     if (bbox) params.append('bbox', bbox);
 
-    const layerPath = layer === 'all' ? '' : `${layer}/`;
-    const url = `${apiBaseUrl}/export/${layerPath}?${params.toString()}`;
+    const url = `${apiBaseUrl}/export/${layer}/?${params.toString()}`;
 
     try {
       const token = typeof window !== 'undefined' ? window.localStorage.getItem('webgis_token') : null;
@@ -63,9 +73,9 @@ export default function ExportModal({ apiBaseUrl, isOpen, onClose, layer = 'all'
       let filename: string;
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="?([^";]+)"?/);
-        filename = match ? match[1] : `${layer === 'all' ? 'webgis-data' : layer}.${format === 'geojson' ? 'geojson' : format}`;
+        filename = match ? match[1] : `${layer}.${format === 'geojson' ? 'geojson' : format}`;
       } else {
-        filename = `${layer === 'all' ? 'webgis-data' : layer}.${format === 'geojson' ? 'geojson' : format === 'shapefile' ? 'zip' : 'csv'}`;
+        filename = `${layer}.${format === 'geojson' ? 'geojson' : format === 'shapefile' ? 'zip' : 'csv'}`;
       }
 
       const downloadUrl = URL.createObjectURL(blob);
@@ -108,20 +118,40 @@ export default function ExportModal({ apiBaseUrl, isOpen, onClose, layer = 'all'
 
         {/* Body */}
         <div className="p-5 space-y-4">
-          {/* Context info */}
-          <div className="rounded-lg bg-slate-900/50 border border-white/5 p-3 text-xs space-y-1">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Layer:</span>
-              <span className="font-semibold text-slate-200 capitalize">
-                {layer === 'all' ? 'All Layers' : formatLayer(layer)}
-              </span>
-            </div>
-            {bbox && (
+          {/* Bounding box info */}
+          {bbox && (
+            <div className="rounded-lg bg-slate-900/50 border border-white/5 p-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-500">Bounding Box:</span>
                 <span className="font-mono text-[10px] text-slate-300">{bbox}</span>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Layer selection */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
+              Layer
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {EXPORTABLE_LAYERS.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setLayer(opt.key)}
+                  className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer flex items-center gap-2 ${
+                    layer === opt.key
+                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                      : 'border-white/10 bg-slate-900/40 hover:border-white/20 hover:bg-slate-900 text-slate-300'
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  <div className="text-xs font-semibold capitalize">{formatLayer(opt.key)}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[9px] text-slate-600 mt-1.5">
+              Only layers marked exportable in the LayerRegistry are available. Utility networks are not exportable.
+            </p>
           </div>
 
           {/* Format selection */}
@@ -172,7 +202,7 @@ export default function ExportModal({ apiBaseUrl, isOpen, onClose, layer = 'all'
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                Export {layer === 'all' ? 'All Data' : formatLayer(layer)}
+                Export {formatLayer(layer)}
               </>
             )}
           </button>

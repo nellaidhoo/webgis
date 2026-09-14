@@ -5,12 +5,13 @@ import L from 'leaflet';
 import { 
   Map as MapIcon, Layers, Search, Shield, User, LogIn, LogOut, CheckCircle, 
   X, Edit, Trash2, Save, Plus, ArrowRight, Activity, FileText, Database, AlertCircle,
-  Ruler, Eraser, CheckSquare, Download
+  Ruler, Eraser, CheckSquare, Download, Users
 } from 'lucide-react';
 import SearchBar from './SearchBar';
 import AdminPanel from './AdminPanel';
 import ApprovalDashboard from './ApprovalDashboard';
 import ExportModal from './ExportModal';
+import UsersPanel from './UsersPanel';
 import ForcePasswordChangeModal from './ForcePasswordChangeModal';
 import { useToast } from './ToastProvider';
 
@@ -50,6 +51,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   });
   const [showLogin, setShowLogin] = useState<boolean>(false);
   const [showApprovals, setShowApprovals] = useState<boolean>(false);
+  const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showExport, setShowExport] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'layers' | 'metadata'>('layers');
   const [featureTab, setFeatureTab] = useState<'details' | 'lineage' | 'history'>('details');
@@ -461,34 +463,40 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     if (visibleLayers['roads']) syncRoadLabels();
   }, [visibleLayers]);
 
-  // Fetch all GIS vectors from API endpoints
-  const fetchData = async () => {
+  // Fetch all GIS vectors from API endpoints.
+  // `authToken` is injected explicitly during login/logout because setState is
+  // async — reading `token` right after setToken() would use the stale value.
+  const fetchData = async (authToken?: string | null) => {
+    const effToken = authToken !== undefined ? authToken : token;
     try {
       // Core Layers
-      loadLayer('roads', `${apiBaseUrl}/roads/`, roadStyle);
-      loadLayer('buildings', `${apiBaseUrl}/buildings/`, buildingStyle);
-      loadLayer('land_use', `${apiBaseUrl}/land_use/`, landUseStyle);
-      loadLayer('facilities', `${apiBaseUrl}/facilities/`, facilityStyle);
+      loadLayer('roads', `${apiBaseUrl}/roads/`, roadStyle, effToken);
+      loadLayer('buildings', `${apiBaseUrl}/buildings/`, buildingStyle, effToken);
+      loadLayer('land_use', `${apiBaseUrl}/land_use/`, landUseStyle, effToken);
+      loadLayer('facilities', `${apiBaseUrl}/facilities/`, facilityStyle, effToken);
 
       // Assets & Utilities
-      loadLayer('street_lights', `${apiBaseUrl}/assets/street_lights/`, assetPointStyle('#fbbf24'));
-      loadLayer('water_lines', `${apiBaseUrl}/assets/water_lines/`, utilityLineStyle('#3b82f6'));
-      loadLayer('water_nodes', `${apiBaseUrl}/assets/water_nodes/`, assetPointStyle('#3b82f6'));
-      loadLayer('sewer_lines', `${apiBaseUrl}/assets/sewer_lines/`, utilityLineStyle('#8b5cf6'));
-      loadLayer('manholes', `${apiBaseUrl}/assets/manholes/`, assetPointStyle('#8b5cf6', 6));
-      loadLayer('sewer_junctions', `${apiBaseUrl}/assets/sewer_junctions/`, assetPointStyle('#c084fc', 4));
-      loadLayer('electrical_lines', `${apiBaseUrl}/assets/electrical_lines/`, utilityLineStyle('#ef4444'));
-      loadLayer('electrical_nodes', `${apiBaseUrl}/assets/electrical_nodes/`, assetPointStyle('#ef4444'));
-      loadLayer('fiber_lines', `${apiBaseUrl}/assets/fiber_lines/`, fiberProviderStyle);
-      loadLayer('fiber_nodes', `${apiBaseUrl}/assets/fiber_nodes/`, assetPointStyle('#10b981'));
+      loadLayer('street_lights', `${apiBaseUrl}/assets/street_lights/`, assetPointStyle('#fbbf24'), effToken);
+      loadLayer('water_lines', `${apiBaseUrl}/assets/water_lines/`, utilityLineStyle('#3b82f6'), effToken);
+      loadLayer('water_nodes', `${apiBaseUrl}/assets/water_nodes/`, assetPointStyle('#3b82f6'), effToken);
+      loadLayer('sewer_lines', `${apiBaseUrl}/assets/sewer_lines/`, utilityLineStyle('#8b5cf6'), effToken);
+      loadLayer('manholes', `${apiBaseUrl}/assets/manholes/`, assetPointStyle('#8b5cf6', 6), effToken);
+      loadLayer('sewer_junctions', `${apiBaseUrl}/assets/sewer_junctions/`, assetPointStyle('#c084fc', 4), effToken);
+      loadLayer('electrical_lines', `${apiBaseUrl}/assets/electrical_lines/`, utilityLineStyle('#ef4444'), effToken);
+      loadLayer('electrical_nodes', `${apiBaseUrl}/assets/electrical_nodes/`, assetPointStyle('#ef4444'), effToken);
+      loadLayer('fiber_lines', `${apiBaseUrl}/assets/fiber_lines/`, fiberProviderStyle, effToken);
+      loadLayer('fiber_nodes', `${apiBaseUrl}/assets/fiber_nodes/`, assetPointStyle('#10b981'), effToken);
     } catch (err) {
       console.error("Error retrieving spatial data:", err);
     }
   };
 
-  const loadLayer = async (name: string, url: string, styleFunc: any) => {
+  const loadLayer = async (name: string, url: string, styleFunc: any, authToken?: string | null) => {
     try {
-      const res = await fetch(url);
+      // Restricted (asset/utility) layers require the caller's JWT; the backend
+      // LayerVisibilityPermission enforces the registry visibility regardless.
+      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+      const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
@@ -736,6 +744,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     setShowLogin(false);
     setForceChangeRequired(mustChange);
     setShowForcedChange(mustChange);
+    fetchData(tok);
   };
 
   const handleLogout = () => {
@@ -748,6 +757,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
       window.localStorage.removeItem('webgis_token');
       window.localStorage.removeItem('webgis_role');
     }
+    fetchData(null);
   };
 
   // Re-check the forced-password flag when a session is restored from localStorage
@@ -1274,6 +1284,17 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
             >
               <Database className="w-3.5 h-3.5" />
               <span>Survey Ingestion</span>
+            </button>
+          )}
+
+          {/* Account Management Trigger (Super Admin only) */}
+          {role === 'Super Admin' && (
+            <button 
+              onClick={() => setShowUsers(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/35 hover:border-violet-500/50 shadow-md text-xs text-violet-400 cursor-pointer font-medium transition-all"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Manage Users</span>
             </button>
           )}
 
@@ -1893,12 +1914,20 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
         />
       )}
 
+      {/* 6b. MODAL POPUPS: Super Admin Account Management */}
+      {showUsers && role === 'Super Admin' && (
+        <UsersPanel
+          apiBaseUrl={apiBaseUrl}
+          token={token}
+          onClose={() => setShowUsers(false)}
+        />
+      )}
+
       {/* 7. MODAL POPUPS: Data Export */}
       <ExportModal
         apiBaseUrl={apiBaseUrl}
         isOpen={showExport}
         onClose={() => setShowExport(false)}
-        layer="all"
         bbox={showExport ? getMapBounds() : undefined}
       />
 

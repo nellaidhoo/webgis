@@ -761,6 +761,36 @@ class AdminResetPasswordView(views.APIView):
         })
 
 
+class UsersAdminView(views.APIView):
+    """
+    Super Admin directory of all account profiles, used by the React console
+    for user provisioning (e.g. identifying who to reset). Read-only listing;
+    provisioning actions use the dedicated reset endpoint.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        users = User.objects.all().order_by('-is_superuser', '-date_joined')
+        records = []
+        for user in users:
+            profile = UserAccountProfile.get_for(user)
+            records.append({
+                'id': user.pk,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_active': user.is_active,
+                'is_superuser': user.is_superuser,
+                'last_login': user.last_login.isoformat() if user.last_login else None,
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                'roles': user_roles(user),
+                'role': primary_role(user),
+                'must_change_password': profile.must_change_password,
+            })
+        return Response(records)
+
+
 class HealthCheckView(views.APIView):
     """Detailed health check for monitoring and load balancers."""
     permission_classes = [permissions.AllowAny]

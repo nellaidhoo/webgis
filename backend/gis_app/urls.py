@@ -6,7 +6,8 @@ from .views import (
     ManholeViewSet, SewerJunctionViewSet, ElectricalLineViewSet, ElectricalNodeViewSet,
     FiberLineViewSet, FiberNodeViewSet, SurveySessionViewSet, AuditLogViewSet,
     SearchView, RegisterView, MeView, HealthCheckView, VectorTileView, MetricsView,
-    ExportView, ExportLayersView, ChangePasswordView, AdminResetPasswordView
+    ExportView, ExportLayersView, ChangePasswordView, AdminResetPasswordView,
+    UsersAdminView
 )
 
 router = DefaultRouter()
@@ -44,6 +45,7 @@ urlpatterns = [
     # Password security endpoints
     path('auth/change-password/', ChangePasswordView.as_view(), name='change-password'),
     path('auth/reset-password/<int:user_id>/', AdminResetPasswordView.as_view(), name='admin-reset-password'),
+    path('auth/users/', UsersAdminView.as_view(), name='admin-users'),
     # Health check endpoint
     path('health/', HealthCheckView.as_view(), name='health-check'),
     # Vector tile endpoints
