@@ -300,7 +300,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Initialize Map centered on the configured default location (Nellaidhoo, Maldives by default)
+    // Initialize Map centered on the configured default location (Nellaidhoo, Maldives)
     const map = L.map(mapContainerRef.current, {
       center: DEFAULT_MAP_CENTER,
       zoom: DEFAULT_MAP_ZOOM,

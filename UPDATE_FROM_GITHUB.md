@@ -127,8 +127,8 @@ map config changes:
 cd /opt/webgis/frontend
 sudo -u webgis npm ci
 sudo -u webgis env NEXT_PUBLIC_API_URL=http://192.168.150.33/api \
-  NEXT_PUBLIC_MAP_CENTER_LAT=3.943 \
-  NEXT_PUBLIC_MAP_CENTER_LNG=73.489 \
+  NEXT_PUBLIC_MAP_CENTER_LAT=6.7156 \
+  NEXT_PUBLIC_MAP_CENTER_LNG=72.9467 \
   NEXT_PUBLIC_MAP_ZOOM=15 \
   npm run build
 ```

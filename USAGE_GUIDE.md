@@ -2,7 +2,7 @@
 
 Step-by-step guide for using the **Django Admin Panel** and the **WebGIS Frontend Map Portal**.
 
-> Default map center: **Nellaidhoo, Maldives** (`lat 3.943, lng 73.489`, zoom 15).  
+> Default map center: **Nellaidhoo, Maldives** (`lat 6.7156, lng 72.9467`, zoom 15).  
 > Change it without code edits via `NEXT_PUBLIC_MAP_CENTER_LAT` / `NEXT_PUBLIC_MAP_CENTER_LNG` / `NEXT_PUBLIC_MAP_ZOOM` in `frontend/.env.local` (baked at build time).
 
 ---
