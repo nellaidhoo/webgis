@@ -14,6 +14,7 @@ import ExportModal from './ExportModal';
 import UsersPanel from './UsersPanel';
 import ForcePasswordChangeModal from './ForcePasswordChangeModal';
 import { useToast } from './ToastProvider';
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../lib/mapConfig';
 
 // Helper to fix Leaflet marker icons in Next.js
 const fixLeafletIcons = () => {
@@ -55,7 +56,7 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   const [showExport, setShowExport] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'layers' | 'metadata'>('layers');
   const [featureTab, setFeatureTab] = useState<'details' | 'lineage' | 'history'>('details');
-  const [zoomLevel, setZoomLevel] = useState<number>(15);
+  const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_MAP_ZOOM);
 
   // Security: the authenticated account must change its password before editing (admin reset flow)
   const [forceChangeRequired, setForceChangeRequired] = useState<boolean>(false);
@@ -299,10 +300,10 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
     
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Initialize Map centered on Maafushi island, Maldives
+    // Initialize Map centered on the configured default location (Nellaidhoo, Maldives by default)
     const map = L.map(mapContainerRef.current, {
-      center: [3.943, 73.489],
-      zoom: 15,
+      center: DEFAULT_MAP_CENTER,
+      zoom: DEFAULT_MAP_ZOOM,
       zoomControl: false,
       attributionControl: true
     });

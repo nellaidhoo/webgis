@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { useToast } from './ToastProvider';
+import { DEFAULT_MAP_CENTER, PREVIEW_MAP_ZOOM } from '../lib/mapConfig';
 import UploadWizard from './UploadWizard';
 import ExportModal from './ExportModal';
 import { 
@@ -257,8 +258,8 @@ export default function ApprovalDashboard({
     if (!previewSession || !previewMapContainerRef.current) return;
 
     const map = L.map(previewMapContainerRef.current, {
-      center: [3.943, 73.489],
-      zoom: 16,
+      center: DEFAULT_MAP_CENTER,
+      zoom: PREVIEW_MAP_ZOOM,
       zoomControl: true,
       attributionControl: false
     });
@@ -277,7 +278,7 @@ export default function ApprovalDashboard({
         maxZoom: 21,
         minZoom: 15
       }).addTo(map);
-      map.setView([3.943, 73.489], 16);
+      map.setView(DEFAULT_MAP_CENTER, PREVIEW_MAP_ZOOM);
     }
 
     // Survey session: draw staged draft features (per-layer groups for toggling)
