@@ -16,7 +16,7 @@ class DataExporter:
     LAYER_MAP = {
         'roads': {
             'model': 'gis_app.Road',
-            'fields': ['id', 'asset_code', 'road_name', 'road_code', 'surface_type', 'status'],
+            'fields': ['id', 'asset_code', 'road_name', 'road_code', 'surface_type', 'width_ft', 'status'],
             'geometry_field': 'geometry',
             'geometry_type': 'LineString'
         },

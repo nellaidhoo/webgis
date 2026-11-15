@@ -147,14 +147,14 @@ class AuditLogAdmin(admin.ModelAdmin):
 # --- CORE GEOMETRY MODELS (with GIS support) ---
 @admin.register(Road)
 class RoadAdmin(BaseGISAdmin):
-    list_display = ('asset_code', 'road_name', 'road_code', 'surface_type', 'status')
+    list_display = ('asset_code', 'road_name', 'road_code', 'surface_type', 'width_ft', 'status')
     list_filter = ('status', 'surface_type')
     search_fields = ('asset_code', 'road_name', 'road_code')
 
 
 @admin.register(StagingRoad)
 class StagingRoadAdmin(BaseGISAdmin):
-    list_display = ('asset_code', 'road_name', 'road_code', 'session')
+    list_display = ('asset_code', 'road_name', 'road_code', 'surface_type', 'width_ft', 'session')
     list_filter = ('session__status', 'surface_type')
     search_fields = ('asset_code', 'road_name', 'road_code')
 

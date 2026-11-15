@@ -628,11 +628,18 @@ export default function MapViewer({ apiBaseUrl = 'http://localhost/api' }: MapVi
   };
 
   // Styling Helpers
-  const roadStyle = (feature: any) => ({
-    color: feature.properties.surface_type === 'Asphalt' ? '#f97316' : '#eab308',
-    weight: 4,
-    opacity: 0.85
-  });
+  const roadStyle = (feature: any) => {
+    const widthFt = Number(feature?.properties?.width_ft);
+    // Scale polyline thickness by road width (feet). ~1 px per 4 ft, clamped.
+    const weight = Number.isFinite(widthFt) && widthFt > 0
+      ? Math.max(2, Math.min(14, Math.round(widthFt / 4)))
+      : 4;
+    return {
+      color: feature.properties.surface_type === 'Asphalt' ? '#f97316' : '#eab308',
+      weight,
+      opacity: 0.85
+    };
+  };
 
   const buildingStyle = (feature: any) => ({
     fillColor: feature.properties.building_type === 'Government' ? '#3b82f6' : 

@@ -227,7 +227,7 @@ export default function ApprovalDashboard({
   };
 
   // Style mapping for the staged preview layers (mirrors production map palette)
-  const previewStyleFor = (layerName: string) => {
+  const previewStyleFor = (layerName: string, feature?: any) => {
     const lineColors: Record<string, string> = {
       roads: '#f97316', water_lines: '#3b82f6', sewer_lines: '#8b5cf6',
       electrical_lines: '#ef4444', fiber_lines: '#10b981'
@@ -239,7 +239,11 @@ export default function ApprovalDashboard({
     };
 
     if (lineColors[layerName]) {
-      return { color: lineColors[layerName], weight: 3, opacity: 0.85 };
+      const widthFt = Number(feature?.properties?.width_ft);
+      const weight = (layerName === 'roads' && Number.isFinite(widthFt) && widthFt > 0)
+        ? Math.max(2, Math.min(14, Math.round(widthFt / 4)))
+        : 3;
+      return { color: lineColors[layerName], weight, opacity: 0.85 };
     }
     if (layerName === 'land_use') {
       return { color: '#ffffff', fillColor: '#eab308', fillOpacity: 0.2, weight: 1, dashArray: '4' };
@@ -301,9 +305,9 @@ export default function ApprovalDashboard({
 
         const group = L.layerGroup();
         const geo = L.geoJSON(geojsonFeatures, {
-          style: previewStyleFor(layerName),
+          style: (feature: any) => previewStyleFor(layerName, feature),
           pointToLayer: (feature, latlng) => {
-            const style: any = previewStyleFor(layerName);
+            const style: any = previewStyleFor(layerName, feature);
             return L.circleMarker(latlng, style);
           },
           onEachFeature: (feature, layer) => {

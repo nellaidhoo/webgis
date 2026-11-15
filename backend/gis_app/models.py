@@ -181,6 +181,7 @@ class Road(BaseGISModel):
     road_name = models.CharField(max_length=150, blank=True)
     road_code = models.CharField(max_length=50, blank=True)
     surface_type = models.CharField(max_length=50, blank=True)
+    width_ft = models.FloatField(null=True, blank=True, help_text="Roadway width in feet")
     geometry = models.LineStringField(srid=32643) # UTM Zone 43N
 
     class Meta:
@@ -195,6 +196,7 @@ class StagingRoad(BaseStagingModel):
     road_name = models.CharField(max_length=150, blank=True)
     road_code = models.CharField(max_length=50, blank=True)
     surface_type = models.CharField(max_length=50, blank=True)
+    width_ft = models.FloatField(null=True, blank=True, help_text="Roadway width in feet")
     geometry = models.LineStringField(srid=32643)
 
     class Meta:

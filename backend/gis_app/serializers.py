@@ -433,7 +433,7 @@ class PublicRoadSerializer(serializers.ModelSerializer):
     geometry = GeometrySerializerField()
     class Meta:
         model = Road
-        fields = ['id', 'asset_code', 'road_name', 'road_code', 'surface_type', 'geometry']
+        fields = ['id', 'asset_code', 'road_name', 'road_code', 'surface_type', 'width_ft', 'geometry']
 
 
 class PublicBuildingSerializer(serializers.ModelSerializer):

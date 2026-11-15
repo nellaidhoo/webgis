@@ -62,7 +62,7 @@ def _merge_layer(staging_model, production_model, session, user, prefix, field_m
 
 LAYER_SPECS = [
     # (staging_model, production_model, asset-code prefix, {staging_field: production_field})
-    ('StagingRoad', 'Road', 'ROAD', {'road_name': 'road_name', 'road_code': 'road_code', 'surface_type': 'surface_type'}),
+    ('StagingRoad', 'Road', 'ROAD', {'road_name': 'road_name', 'road_code': 'road_code', 'surface_type': 'surface_type', 'width_ft': 'width_ft'}),
     ('StagingBuilding', 'Building', 'BLDG', {'building_code': 'building_code', 'house_name': 'house_name', 'building_type': 'building_type', 'usage': 'usage', 'floors': 'floors'}),
     ('StagingLandUse', 'LandUse', 'ZONE', {'zone_class': 'zone_class', 'zone_name': 'zone_name'}),
     ('StagingFacility', 'Facility', 'FAC', {'name': 'name', 'category': 'category', 'category_old': 'category_old'}),
